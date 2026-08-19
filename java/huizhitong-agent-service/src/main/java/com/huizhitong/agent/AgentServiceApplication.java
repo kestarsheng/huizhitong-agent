@@ -1,10 +1,12 @@
 package com.huizhitong.agent;
 
 import org.mybatis.spring.annotation.MapperScan;
+import org.springframework.cloud.openfeign.EnableFeignClients;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 @MapperScan("com.huizhitong.agent.mapper")
+@EnableFeignClients
 @SpringBootApplication
 public class AgentServiceApplication {
     public static void main(String[] args) {

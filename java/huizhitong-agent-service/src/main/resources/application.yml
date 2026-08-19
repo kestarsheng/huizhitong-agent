@@ -17,3 +17,7 @@ mybatis-plus:
     db-config:
       id-type: auto
 
+agent:
+  runtime:
+    url: ${AGENT_RUNTIME_URL:http://localhost:8000}
+
