@@ -32,3 +32,15 @@ onMounted(loadTools)
     </section>
   </main>
 </template>
+
+<style>
+:root{font-family:'Manrope','Space Grotesk',sans-serif;color:#e8f0ff;background:#08111f;--line:#213b61;--muted:#8297b5;--blue:#54a8ff;--cyan:#76e4ff;--good:#79e6b2}
+body{background:radial-gradient(circle at 82% -12%,#19375e 0,#08111f 38%);min-height:100vh}
+.rail{background:rgba(8,17,31,.88);border-color:var(--line);backdrop-filter:blur(16px)}
+.mark{border-radius:13px;background:linear-gradient(135deg,var(--cyan),var(--blue));box-shadow:0 10px 28px #227dc755}
+.rail nav a{border-radius:11px}.rail nav .selected{color:#fff;background:linear-gradient(90deg,#193a63,#122741);box-shadow:inset 3px 0 var(--blue)}
+.content{padding-bottom:70px}.eyebrow{color:var(--blue)}
+button{border-color:#428bd6;background:#102948;color:#a9d5ff;border-radius:10px;transition:.2s ease}button:hover{background:#1a4e83;border-color:var(--cyan);color:#fff;transform:translateY(-1px)}
+.stats{gap:12px}.stats div{background:linear-gradient(145deg,#122541,#0d1a2d);border-color:var(--line);border-radius:15px;box-shadow:0 12px 30px #0209144d}.online{color:var(--good)}
+.tool-card{background:linear-gradient(145deg,#132744cc,#0d1a2ecc);border-color:var(--line);border-radius:17px;box-shadow:0 14px 34px #0209144d;transition:.22s ease}.tool-card:hover{transform:translateY(-4px);border-color:#3e78b8;box-shadow:0 18px 42px #02091488}.tool-card h2{color:#f3f7ff}.tool-card p{color:#9eb1ca}.server{color:var(--cyan)}.dot.on{background:var(--good);box-shadow:0 0 14px #79e6b288}
+</style>
