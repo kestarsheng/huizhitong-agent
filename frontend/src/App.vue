@@ -50,8 +50,8 @@ onMounted(loadTools)
 </template>
 
 <style>
-:root{font-family:'Manrope','Space Grotesk',sans-serif;color:#17345a;background:#edf5ff;--line:#d4e4f6;--muted:#6c83a0;--blue:#287be0;--cyan:#18a9d2;--good:#159b67}
-body{background:radial-gradient(circle at 82% -12%,#cfe7ff 0,#edf5ff 42%);min-height:100vh}
+:root{font-family:'Manrope','Space Grotesk',sans-serif;color:#17345a!important;background:#edf5ff!important;--line:#d4e4f6;--muted:#6c83a0;--blue:#287be0;--cyan:#18a9d2;--good:#159b67}
+body{background:radial-gradient(circle at 82% -12%,#cfe7ff 0,#edf5ff 42%)!important;min-height:100vh}
 .rail{background:rgba(255,255,255,.8);border-color:#d8e7f6;backdrop-filter:blur(16px);box-shadow:8px 0 30px #4779a00d}.mark{border-radius:13px;background:linear-gradient(135deg,#76dfff,#287be0);box-shadow:0 10px 28px #287be044}.rail-label{color:#17345a}.rail nav a{border-radius:11px;color:#7890ad}.rail nav .selected{color:#1764bd;background:#e4f1ff;box-shadow:inset 3px 0 var(--blue)}
 .content{padding-bottom:70px}.eyebrow{color:var(--blue)}h1{color:#15345b}.sub{color:#6c83a0}
 button{border-color:#aacbea;background:#fff;color:#2870c5;border-radius:10px;transition:.2s ease;box-shadow:0 5px 15px #397db31a}button:hover{background:#287be0;border-color:#287be0;color:#fff;transform:translateY(-1px)}
