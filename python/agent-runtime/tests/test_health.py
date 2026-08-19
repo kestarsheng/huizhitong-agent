@@ -22,5 +22,18 @@ def test_run_agent_contract() -> None:
         },
     )
     assert response.status_code == 200
-    assert response.json()["status"] == "ACCEPTED"
+    assert response.json()["status"] == "COMPLETED"
+
+
+def test_knowledge_route() -> None:
+    response = client.post(
+        "/internal/agents/run",
+        json={
+            "agent_type": "knowledge",
+            "conversation_id": "conv-2",
+            "message": "设备故障怎么处理",
+        },
+    )
+    assert response.status_code == 200
+    assert response.json()["status"] == "WAITING_RAG"
 
