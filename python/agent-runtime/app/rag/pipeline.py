@@ -41,6 +41,32 @@ def fuse_results(chunks: list[DocumentChunk], query: str, *, top_k: int = 5) -> 
     return results[:top_k]
 
 
+def reciprocal_rank_fusion(
+    dense_results: list[RetrievedChunk],
+    sparse_results: list[RetrievedChunk],
+    *,
+    top_k: int = 20,
+    k: int = 60,
+) -> list[RetrievedChunk]:
+    """使用 RRF 合并两路召回，降低单一路径排序偏差。"""
+    merged: dict[str, RetrievedChunk] = {}
+    scores: dict[str, float] = {}
+    for ranking in (dense_results, sparse_results):
+        for rank, item in enumerate(ranking, start=1):
+            key = item.chunk.chunk_id
+            previous = merged.get(key)
+            merged[key] = item if previous is None else RetrievedChunk(
+                item.chunk,
+                dense_score=max(previous.dense_score, item.dense_score),
+                sparse_score=max(previous.sparse_score, item.sparse_score),
+            )
+            scores[key] = scores.get(key, 0.0) + 1.0 / (k + rank)
+    return [
+        RetrievedChunk(item.chunk, item.dense_score, item.sparse_score, scores[key])
+        for key, item in sorted(merged.items(), key=lambda pair: scores[pair[0]], reverse=True)[:top_k]
+    ]
+
+
 class RAGRetriever:
     def __init__(self, chunks: list[DocumentChunk] | None = None):
         self._chunks = chunks or []

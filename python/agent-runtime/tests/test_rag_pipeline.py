@@ -1,6 +1,7 @@
 import pytest
 
-from app.rag.pipeline import RAGRetriever, split_document
+from app.rag.models import DocumentChunk, RetrievedChunk
+from app.rag.pipeline import RAGRetriever, reciprocal_rank_fusion, split_document
 
 
 def test_split_document_keeps_overlap_and_ids():
@@ -19,3 +20,15 @@ def test_sparse_retrieval_ranks_keyword_match():
 def test_invalid_chunk_options():
     with pytest.raises(ValueError):
         split_document("x", "content", chunk_size=10, overlap=10)
+
+
+def test_rrf_merges_dense_and_sparse_results():
+    first = DocumentChunk("1", "库存规则")
+    second = DocumentChunk("2", "维修规则")
+    results = reciprocal_rank_fusion(
+        [RetrievedChunk(first, dense_score=0.9), RetrievedChunk(second, dense_score=0.8)],
+        [RetrievedChunk(second, sparse_score=1.0), RetrievedChunk(first, sparse_score=0.2)],
+        top_k=2,
+    )
+    assert {item.chunk.chunk_id for item in results} == {"1", "2"}
+    assert all(item.fused_score > 0 for item in results)
