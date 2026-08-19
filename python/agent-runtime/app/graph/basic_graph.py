@@ -6,6 +6,7 @@ from app.tools.inventory_gateway import inventory_gateway
 from app.tools.inventory_gateway import mcp_inventory_gateway
 import os
 from app.llm.deepseek import generate_answer
+from app.rag.knowledge import knowledge_service
 import re
 
 
@@ -42,8 +43,11 @@ async def inventory_node(state: AgentState) -> AgentState:
     return {"answer": answer, "status": "COMPLETED"}
 
 
-def knowledge_node(state: AgentState) -> AgentState:
-    return {"answer": "已识别为知识问答任务，等待接入 RAG 检索链路。", "status": "WAITING_RAG"}
+async def knowledge_node(state: AgentState) -> AgentState:
+    context = knowledge_service.search_context(state["user_message"])
+    if not context:
+        return {"answer": "知识库暂未检索到相关内容，请补充设备型号、错误码或具体故障现象。", "status": "WAITING_RAG"}
+    return {"answer": f"根据知识库检索结果：\n{context}", "status": "WAITING_RAG"}
 
 
 def ticket_node(state: AgentState) -> AgentState:
