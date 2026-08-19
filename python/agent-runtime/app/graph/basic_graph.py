@@ -7,6 +7,7 @@ from app.tools.inventory_gateway import mcp_inventory_gateway
 import os
 from app.llm.deepseek import generate_answer
 from app.rag.knowledge import knowledge_service
+from app.tools.registry_client import tool_registry_client
 import re
 
 
@@ -28,6 +29,11 @@ def route_by_intent(state: AgentState) -> str:
 
 
 async def inventory_node(state: AgentState) -> AgentState:
+    if state.get("tenant_id") is not None:
+        allowed = await tool_registry_client.available_tools(state.get("agent_type", "inventory"), state["tenant_id"])
+        allowed_names = {item.get("toolName") for item in allowed}
+        if allowed and not ({"query_inventory", "analyze_inventory_risk"} & allowed_names):
+            return {"answer": "当前租户未授权库存工具，请联系管理员开通。", "status": "FORBIDDEN"}
     product_id = re.search(r"P\d{4}", state["user_message"], re.IGNORECASE)
     if product_id is None:
         return {"answer": "请提供商品编号，例如 P1001。", "status": "NEED_INPUT"}

@@ -21,6 +21,7 @@ async def run_agent(request: AgentRunRequest) -> AgentRunResponse:
     result = await basic_graph.ainvoke({
         "agent_type": request.agent_type,
         "conversation_id": request.conversation_id,
+        "tenant_id": request.tenant_id,
         "user_message": request.message,
     }, config={"configurable": {"thread_id": request.conversation_id}})
     return AgentRunResponse(
@@ -38,6 +39,7 @@ async def stream_agent(request: AgentRunRequest) -> EventSourceResponse:
         graph_input = {
             "agent_type": request.agent_type,
             "conversation_id": request.conversation_id,
+            "tenant_id": request.tenant_id,
             "user_message": request.message,
         }
         config = {"configurable": {"thread_id": request.conversation_id}}
