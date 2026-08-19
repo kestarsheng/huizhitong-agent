@@ -17,6 +17,13 @@ async function loadTools() {
   finally { loading.value = false }
 }
 
+async function toggleTool(tool) {
+  const next = tool.enabled !== 1
+  const response = await fetch(`/api/internal/tools/${tool.id}/status?enabled=${next}`, { method: 'PATCH' })
+  if (!response.ok) { error.value = '工具状态更新失败'; return }
+  await loadTools()
+}
+
 onMounted(loadTools)
 </script>
 
@@ -28,7 +35,7 @@ onMounted(loadTools)
       <div class="stats"><div><span>已注册工具</span><strong>{{ tools.length }}</strong></div><div><span>当前启用</span><strong>{{ active }}</strong></div><div><span>连接状态</span><strong class="online">{{ error ? 'OFFLINE' : 'ONLINE' }}</strong></div></div>
       <div v-if="loading" class="empty">正在读取工具注册中心…</div>
       <div v-else-if="error" class="empty danger">{{ error }}<button @click="loadTools">重试</button></div>
-      <div v-else class="tool-grid"><article v-for="tool in tools" :key="tool.id" class="tool-card"><div class="card-top"><span class="tool-id">TOOL / {{ String(tool.id).padStart(2, '0') }}</span><i :class="['dot', tool.enabled === 1 ? 'on' : 'off']"></i></div><h2>{{ tool.toolName }}</h2><p>{{ tool.description }}</p><div class="server">↳ {{ tool.serverName }} <span>{{ tool.enabled === 1 ? '已启用' : '已停用' }}</span></div></article></div>
+      <div v-else class="tool-grid"><article v-for="tool in tools" :key="tool.id" class="tool-card"><div class="card-top"><span class="tool-id">TOOL / {{ String(tool.id).padStart(2, '0') }}</span><i :class="['dot', tool.enabled === 1 ? 'on' : 'off']"></i></div><h2>{{ tool.toolName }}</h2><p>{{ tool.description }}</p><div class="server">↳ {{ tool.serverName }} <span>{{ tool.enabled === 1 ? '已启用' : '已停用' }}</span></div><button class="toggle" @click="toggleTool(tool)">{{ tool.enabled === 1 ? '停用工具' : '启用工具' }}</button></article></div>
     </section>
   </main>
 </template>
@@ -41,4 +48,5 @@ body{background:radial-gradient(circle at 82% -12%,#cfe7ff 0,#edf5ff 42%);min-he
 button{border-color:#aacbea;background:#fff;color:#2870c5;border-radius:10px;transition:.2s ease;box-shadow:0 5px 15px #397db31a}button:hover{background:#287be0;border-color:#287be0;color:#fff;transform:translateY(-1px)}
 .stats{gap:14px}.stats div{background:rgba(255,255,255,.86);border-color:#d4e4f6;border-radius:15px;box-shadow:0 12px 30px #397db31a}.stats span{color:#7890ad}.stats strong{color:#173b66}.online{color:var(--good)}
 .tool-card{background:rgba(255,255,255,.9);border-color:#d4e4f6;border-radius:17px;box-shadow:0 14px 34px #397db31a;transition:.22s ease}.tool-card:hover{transform:translateY(-4px);border-color:#8dbbea;box-shadow:0 18px 42px #397db333}.tool-card h2{color:#173b66}.tool-card p{color:#6c83a0}.server{color:#168eb5}.dot.on{background:var(--good);box-shadow:0 0 14px #159b6744}.tool-id{color:#7392b5}
+.toggle{margin-top:18px;padding:8px 12px;font-size:11px}
 </style>
