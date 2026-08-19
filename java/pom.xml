@@ -21,6 +21,7 @@
         <module>huizhitong-common</module>
         <module>huizhitong-gateway</module>
         <module>huizhitong-agent-service</module>
+        <module>huizhitong-tool-service</module>
     </modules>
 
     <properties>
