@@ -9,7 +9,7 @@ const active = computed(() => tools.value.filter(item => item.enabled === 1).len
 async function loadTools() {
   loading.value = true
   try {
-    const response = await fetch('http://localhost:8083/internal/tools')
+    const response = await fetch('/api/internal/tools')
     if (!response.ok) throw new Error('工具服务暂不可用')
     tools.value = await response.json()
     error.value = ''
