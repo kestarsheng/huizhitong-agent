@@ -5,6 +5,7 @@ from fastapi import APIRouter
 from sse_starlette.sse import EventSourceResponse
 
 from app.schemas.agent import AgentRunRequest, AgentRunResponse
+from app.graph.basic_graph import basic_graph
 
 router = APIRouter(tags=["agent-runtime"])
 
@@ -16,12 +17,17 @@ async def health() -> dict[str, str]:
 
 @router.post("/agents/run", response_model=AgentRunResponse)
 async def run_agent(request: AgentRunRequest) -> AgentRunResponse:
-    """基础同步入口，后续由 LangGraph Runtime 替换执行逻辑。"""
+    """执行基础 LangGraph 状态图，后续替换节点内部的模型和工具实现。"""
+    result = basic_graph.invoke({
+        "agent_type": request.agent_type,
+        "conversation_id": request.conversation_id,
+        "user_message": request.message,
+    })
     return AgentRunResponse(
         conversation_id=request.conversation_id,
         agent_type=request.agent_type,
-        status="ACCEPTED",
-        answer="Agent Runtime 已接收请求，编排引擎尚未接入。",
+        status=result["status"],
+        answer=result["answer"],
     )
 
 
