@@ -63,3 +63,13 @@ def test_inventory_tool_node() -> None:
     assert response.json()["status"] == "COMPLETED"
     assert "建议补货" in response.json()["answer"]
 
+
+def test_deepseek_disabled_fallback(monkeypatch) -> None:
+    monkeypatch.setenv("DEEPSEEK_ENABLED", "false")
+    response = client.post(
+        "/internal/agents/run",
+        json={"agent_type": "general", "conversation_id": "general-1", "message": "你好"},
+    )
+    assert response.status_code == 200
+    assert "未启用 DeepSeek" in response.json()["answer"]
+

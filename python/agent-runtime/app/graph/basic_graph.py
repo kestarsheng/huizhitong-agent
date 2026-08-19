@@ -5,6 +5,7 @@ from app.graph.state import AgentState
 from app.tools.inventory_gateway import inventory_gateway
 from app.tools.inventory_gateway import mcp_inventory_gateway
 import os
+from app.llm.deepseek import generate_answer
 import re
 
 
@@ -49,8 +50,14 @@ def ticket_node(state: AgentState) -> AgentState:
     return {"answer": "已识别为工单处理任务，等待接入工单 MCP 工具。", "status": "WAITING_TOOL"}
 
 
-def general_node(state: AgentState) -> AgentState:
-    return {"answer": "已接收你的问题，当前基础编排图暂未绑定对应业务能力。", "status": "COMPLETED"}
+async def general_node(state: AgentState) -> AgentState:
+    answer = await generate_answer(
+        "你是汇智通企业智能体助手。请简洁、准确地回答用户问题；无法确认时明确说明。",
+        state["user_message"],
+    )
+    if answer is None:
+        answer = "已接收你的问题，当前未启用 DeepSeek 模型或暂未绑定对应业务能力。"
+    return {"answer": answer, "status": "COMPLETED"}
 
 
 def build_basic_graph(checkpointer=None):
