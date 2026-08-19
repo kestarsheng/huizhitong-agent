@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from app.tools.mcp_inventory_gateway import McpInventoryGateway
 
 
 @dataclass(frozen=True)
@@ -24,4 +25,5 @@ class InventoryToolGateway:
 
 
 inventory_gateway = InventoryToolGateway()
+mcp_inventory_gateway = McpInventoryGateway()
 

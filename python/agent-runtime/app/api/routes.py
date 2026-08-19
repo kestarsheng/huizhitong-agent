@@ -18,7 +18,7 @@ async def health() -> dict[str, str]:
 @router.post("/agents/run", response_model=AgentRunResponse)
 async def run_agent(request: AgentRunRequest) -> AgentRunResponse:
     """执行基础 LangGraph 状态图，后续替换节点内部的模型和工具实现。"""
-    result = basic_graph.invoke({
+    result = await basic_graph.ainvoke({
         "agent_type": request.agent_type,
         "conversation_id": request.conversation_id,
         "user_message": request.message,
