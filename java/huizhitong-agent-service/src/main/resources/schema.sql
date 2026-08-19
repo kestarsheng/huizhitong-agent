@@ -1,0 +1,14 @@
+CREATE TABLE IF NOT EXISTS agent (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    tenant_id BIGINT NOT NULL,
+    agent_type VARCHAR(100) NOT NULL,
+    name VARCHAR(100) NOT NULL,
+    description VARCHAR(500),
+    system_prompt TEXT NOT NULL,
+    model_name VARCHAR(100) NOT NULL,
+    status TINYINT NOT NULL DEFAULT 1,
+    version INT NOT NULL DEFAULT 1,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_tenant_agent_type (tenant_id, agent_type)
+);

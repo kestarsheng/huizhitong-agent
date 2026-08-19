@@ -20,6 +20,7 @@
     <modules>
         <module>huizhitong-common</module>
         <module>huizhitong-gateway</module>
+        <module>huizhitong-agent-service</module>
     </modules>
 
     <properties>
