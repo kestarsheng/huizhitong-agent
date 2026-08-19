@@ -1,4 +1,5 @@
 from langgraph.graph import END, START, StateGraph
+from langgraph.checkpoint.memory import MemorySaver
 
 from app.graph.state import AgentState
 
@@ -36,7 +37,7 @@ def general_node(state: AgentState) -> AgentState:
     return {"answer": "已接收你的问题，当前基础编排图暂未绑定对应业务能力。", "status": "COMPLETED"}
 
 
-def build_basic_graph():
+def build_basic_graph(checkpointer=None):
     graph = StateGraph(AgentState)
     graph.add_node("classify_intent", classify_intent)
     graph.add_node("inventory", inventory_node)
@@ -53,8 +54,8 @@ def build_basic_graph():
     graph.add_edge("knowledge", END)
     graph.add_edge("ticket", END)
     graph.add_edge("general", END)
-    return graph.compile()
+    return graph.compile(checkpointer=checkpointer)
 
 
-basic_graph = build_basic_graph()
+basic_graph = build_basic_graph(MemorySaver())
 

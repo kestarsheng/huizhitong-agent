@@ -37,3 +37,15 @@ def test_knowledge_route() -> None:
     assert response.status_code == 200
     assert response.json()["status"] == "WAITING_RAG"
 
+
+def test_same_conversation_can_use_thread_id() -> None:
+    payload = {
+        "agent_type": "knowledge",
+        "conversation_id": "thread-1",
+        "message": "设备维修手册在哪里",
+    }
+    first = client.post("/internal/agents/run", json=payload)
+    second = client.post("/internal/agents/run", json=payload)
+    assert first.status_code == second.status_code == 200
+    assert first.json()["conversation_id"] == second.json()["conversation_id"]
+
