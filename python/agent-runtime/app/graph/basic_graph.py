@@ -3,6 +3,8 @@ from langgraph.checkpoint.memory import MemorySaver
 
 from app.graph.state import AgentState
 from app.tools.inventory_gateway import inventory_gateway
+from app.tools.inventory_gateway import mcp_inventory_gateway
+import os
 import re
 
 
@@ -23,11 +25,14 @@ def route_by_intent(state: AgentState) -> str:
     return state.get("intent", "general")
 
 
-def inventory_node(state: AgentState) -> AgentState:
+async def inventory_node(state: AgentState) -> AgentState:
     product_id = re.search(r"P\d{4}", state["user_message"], re.IGNORECASE)
     if product_id is None:
         return {"answer": "请提供商品编号，例如 P1001。", "status": "NEED_INPUT"}
-    result = inventory_gateway.analyze(product_id.group().upper())
+    if os.getenv("MCP_INVENTORY_ENABLED", "false").lower() == "true":
+        result = await mcp_inventory_gateway.analyze(product_id.group().upper())
+    else:
+        result = inventory_gateway.analyze(product_id.group().upper())
     if not result["found"]:
         return {"answer": result["message"], "status": "COMPLETED"}
     answer = (f"商品 {result['product_id']}（{result['product_name']}）当前库存 "
