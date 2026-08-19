@@ -11,6 +11,8 @@ const active = computed(() => tools.value.filter(item => item.enabled === 1).len
 async function loadTools() {
   loading.value = true
   try {
+    const health = await fetch('/api/internal/health')
+    if (!health.ok) throw new Error('工具服务健康检查失败')
     const response = await fetch('/api/internal/tools')
     if (!response.ok) throw new Error('工具服务暂不可用')
     tools.value = await response.json()
