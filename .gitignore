@@ -7,6 +7,7 @@ target/
 __pycache__/
 *.py[cod]
 .venv/
+hzt-agent-venv/
 .pytest_cache/
 .mypy_cache/
 
@@ -26,4 +27,3 @@ Thumbs.db
 .env
 application-local.yml
 application-local.yaml
-
