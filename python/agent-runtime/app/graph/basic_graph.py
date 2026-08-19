@@ -2,6 +2,8 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.checkpoint.memory import MemorySaver
 
 from app.graph.state import AgentState
+from app.tools.inventory_gateway import inventory_gateway
+import re
 
 
 def classify_intent(state: AgentState) -> AgentState:
@@ -22,7 +24,16 @@ def route_by_intent(state: AgentState) -> str:
 
 
 def inventory_node(state: AgentState) -> AgentState:
-    return {"answer": "已识别为库存分析任务，等待接入库存 MCP 工具。", "status": "WAITING_TOOL"}
+    product_id = re.search(r"P\d{4}", state["user_message"], re.IGNORECASE)
+    if product_id is None:
+        return {"answer": "请提供商品编号，例如 P1001。", "status": "NEED_INPUT"}
+    result = inventory_gateway.analyze(product_id.group().upper())
+    if not result["found"]:
+        return {"answer": result["message"], "status": "COMPLETED"}
+    answer = (f"商品 {result['product_id']}（{result['product_name']}）当前库存 "
+              f"{result['stock']}，安全库存 {result['safe_stock']}，风险等级 {result['risk']}；"
+              f"{result['suggestion']}。")
+    return {"answer": answer, "status": "COMPLETED"}
 
 
 def knowledge_node(state: AgentState) -> AgentState:
