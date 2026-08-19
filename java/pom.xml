@@ -19,6 +19,7 @@
 
     <modules>
         <module>huizhitong-common</module>
+        <module>huizhitong-gateway</module>
     </modules>
 
     <properties>

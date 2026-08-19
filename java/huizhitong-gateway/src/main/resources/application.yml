@@ -1,0 +1,30 @@
+server:
+  port: 8080
+spring:
+  application:
+    name: huizhitong-gateway
+  cloud:
+    gateway:
+      default-filters:
+        - DedupeResponseHeader=Access-Control-Allow-Credentials Access-Control-Allow-Origin
+      globalcors:
+        cors-configurations:
+          '[/**]':
+            allowedOriginPatterns: "*"
+            allowedMethods: "*"
+            allowedHeaders: "*"
+            allowCredentials: true
+      routes:
+        - id: agent-service
+          uri: ${AGENT_SERVICE_URI:http://localhost:8081}
+          predicates:
+            - Path=/api/agents/**
+        - id: auth-service
+          uri: ${AUTH_SERVICE_URI:http://localhost:8082}
+          predicates:
+            - Path=/api/auth/**
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
