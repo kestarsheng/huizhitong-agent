@@ -22,7 +22,7 @@ async def run_agent(request: AgentRunRequest) -> AgentRunResponse:
         "agent_type": request.agent_type,
         "conversation_id": request.conversation_id,
         "user_message": request.message,
-    })
+    }, config={"configurable": {"thread_id": request.conversation_id}})
     return AgentRunResponse(
         conversation_id=request.conversation_id,
         agent_type=request.agent_type,
