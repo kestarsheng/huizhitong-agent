@@ -1,0 +1,29 @@
+# Java
+target/
+*.class
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.mypy_cache/
+
+# Frontend
+node_modules/
+dist/
+.env.local
+
+# IDE / OS
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+
+# Local secrets
+.env
+application-local.yml
+application-local.yaml
+
