@@ -49,3 +49,17 @@ def test_same_conversation_can_use_thread_id() -> None:
     assert first.status_code == second.status_code == 200
     assert first.json()["conversation_id"] == second.json()["conversation_id"]
 
+
+def test_inventory_tool_node() -> None:
+    response = client.post(
+        "/internal/agents/run",
+        json={
+            "agent_type": "inventory",
+            "conversation_id": "thread-inventory",
+            "message": "分析商品 P1002 库存",
+        },
+    )
+    assert response.status_code == 200
+    assert response.json()["status"] == "COMPLETED"
+    assert "建议补货" in response.json()["answer"]
+
