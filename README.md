@@ -23,10 +23,25 @@
 6. RAG 知识库
 7. 前端控制台与部署
 
+## 本地服务端口
+
+| 服务 | 端口 | 入口 |
+| --- | ---: | --- |
+| Vue 管理控制台 | 5173 | `http://localhost:5173` |
+| Java Tool Service | 8083 | `http://localhost:8083/internal/tools` |
+| Python Agent Runtime | 8000 | `http://localhost:8000/internal/health` |
+| Milvus | 19530 | `http://localhost:19530` |
+
+## 本地启动
+
+1. 启动基础设施：`docker compose -f deploy/docker-compose.infra.yml up -d`
+2. 启动 Java Tool Service：在 `java/` 执行 `mvn -pl huizhitong-tool-service spring-boot:run`
+3. 启动 Python Runtime：在 `python/agent-runtime` 执行 `hzt-agent-venv\\Scripts\\python.exe -m uvicorn app.main:app --reload --port 8000`
+4. 启动前端：在 `frontend/` 执行 `npm run dev`
+
 ## 开发约定
 
 - 主分支：`main`
 - 集成分支：`develop`
 - 功能分支：`feature/<module>-<feature>`
 - Commit：`英文类型(英文模块): 中文说明`
-
