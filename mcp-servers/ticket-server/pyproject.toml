@@ -1,0 +1,9 @@
+[project]
+name = "huizhitong-ticket-mcp"
+version = "0.1.0"
+description = "汇智通工单 MCP 工具服务"
+requires-python = ">=3.12"
+dependencies = ["mcp>=1.0,<2.0"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
