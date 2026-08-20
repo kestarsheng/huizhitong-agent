@@ -2,10 +2,13 @@ from collections.abc import AsyncIterator
 import json
 
 from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from sse_starlette.sse import EventSourceResponse
 
 from app.schemas.agent import AgentRunRequest, AgentRunResponse
+from app.schemas.knowledge import DocumentCreateRequest, DocumentSummary
 from app.graph.basic_graph import basic_graph
+from app.rag.knowledge import DuplicateDocumentError, knowledge_service
 
 router = APIRouter(tags=["agent-runtime"])
 
@@ -63,3 +66,24 @@ async def stream_agent(request: AgentRunRequest) -> EventSourceResponse:
 
     return EventSourceResponse(events())
 
+
+@router.post("/knowledge/documents", status_code=201)
+async def add_document(request: DocumentCreateRequest) -> dict[str, object]:
+    """新增知识文档：切片后进入检索器并登记文档清单。"""
+    try:
+        chunk_ids = knowledge_service.add_document(
+            request.document_id, request.content, tenant_id=request.tenant_id
+        )
+    except DuplicateDocumentError:
+        raise HTTPException(status_code=409, detail=f"document_id already exists: {request.document_id}")
+    return {
+        "document_id": request.document_id,
+        "tenant_id": request.tenant_id,
+        "chunk_count": len(chunk_ids),
+    }
+
+
+@router.get("/knowledge/documents", response_model=list[DocumentSummary])
+async def list_documents() -> list[dict[str, object]]:
+    """返回知识库文档清单。"""
+    return knowledge_service.list_documents()
