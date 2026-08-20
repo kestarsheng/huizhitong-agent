@@ -11,6 +11,7 @@ hzt-agent-venv/
 *.egg-info/
 .pytest_cache/
 .mypy_cache/
+mcp-servers/*/data/
 
 # Frontend
 node_modules/
