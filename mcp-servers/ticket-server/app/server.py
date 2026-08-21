@@ -41,15 +41,26 @@ def _connect():
             cursor.execute(f"CREATE DATABASE IF NOT EXISTS `{database}` DEFAULT CHARACTER SET utf8mb4")
         bootstrap.close()
         conn = pymysql.connect(host=host, port=port, user=user, password=password, database=database, charset="utf8mb4", autocommit=True)
-        conn.execute(_TABLE_SQL)
+        _exec(conn, _TABLE_SQL)
         return conn
     default_tmp = Path(os.environ.get("TEMP", os.path.expanduser("~"))) / "huizhitong-ticket"
     data_dir = Path(os.getenv("TICKET_DATA_DIR", default_tmp))
     data_dir.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(data_dir / "tickets.db")
-    conn.execute(_TABLE_SQL)
+    _exec(conn, _TABLE_SQL)
     conn.commit()
     return conn
+
+
+def _exec(conn, sql: str, params: tuple = ()) -> None:
+    with conn.cursor() as cursor:
+        cursor.execute(sql, params)
+
+
+def _query(conn, sql: str, params: tuple = ()) -> list[tuple]:
+    with conn.cursor() as cursor:
+        cursor.execute(sql, params)
+        return cursor.fetchall()
 
 
 @mcp.tool()
@@ -61,10 +72,10 @@ def create_ticket(subject: str, description: str, priority: str = "MEDIUM", cust
     if normalized not in _PRIORITIES:
         return {"created": False, "message": f"优先级仅支持 {sorted(_PRIORITIES)}"}
     with _connect() as conn:
-        row = conn.execute(_MAX_ID_SQL).fetchone()
-        sequence = (row[0] if row and row[0] else 1000) + 1
+        rows = _query(conn, _MAX_ID_SQL)
+        sequence = (rows[0][0] if rows and rows[0] and rows[0][0] else 1000) + 1
         ticket_id = f"TK-{sequence}"
-        conn.execute(_INSERT_SQL, (
+        _exec(conn, _INSERT_SQL, (
             ticket_id, subject.strip(), description.strip(), normalized, customer_id.strip(), "OPEN",
         ))
     return {"created": True, "ticket_id": ticket_id, "subject": subject.strip(), "description": description.strip(),
@@ -75,7 +86,8 @@ def create_ticket(subject: str, description: str, priority: str = "MEDIUM", cust
 def query_ticket(ticket_id: str) -> dict:
     """按工单号查询工单详情。"""
     with _connect() as conn:
-        row = conn.execute(_SELECT_SQL, (ticket_id,)).fetchone()
+        rows = _query(conn, _SELECT_SQL, (ticket_id,))
+        row = rows[0] if rows else None
     if row is None:
         return {"found": False, "ticket_id": ticket_id, "message": "未找到工单"}
     keys = ("ticket_id", "subject", "description", "priority", "customer_id", "status")
