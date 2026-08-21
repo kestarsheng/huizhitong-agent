@@ -16,8 +16,10 @@ dependencies = [
 ai = [
   "langchain>=0.3,<1.0",
 ]
+checkpoint-postgres = [
+  "langgraph-checkpoint-postgres>=2.0,<3.0",
+]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
-
