@@ -53,14 +53,20 @@ def _connect():
 
 
 def _exec(conn, sql: str, params: tuple = ()) -> None:
-    with conn.cursor() as cursor:
+    cursor = conn.cursor()
+    try:
         cursor.execute(sql, params)
+    finally:
+        cursor.close()
 
 
 def _query(conn, sql: str, params: tuple = ()) -> list[tuple]:
-    with conn.cursor() as cursor:
+    cursor = conn.cursor()
+    try:
         cursor.execute(sql, params)
         return cursor.fetchall()
+    finally:
+        cursor.close()
 
 
 @mcp.tool()
