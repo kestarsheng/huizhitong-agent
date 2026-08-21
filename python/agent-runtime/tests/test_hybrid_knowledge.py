@@ -28,7 +28,7 @@ class FakeReranker:
 
 
 def test_hybrid_retrieval_uses_dense_and_rerank() -> None:
-    service = KnowledgeService(provider=FakeProvider(), reranker=FakeReranker())
+    service = KnowledgeService(provider=FakeProvider(), reranker=FakeReranker(), vector_mode="memory")
     service.add_document("manual", "设备错误码 E-1024 表示散热异常，需要重启设备并检查散热。", tenant_id="t1")
     service.add_document("policy", "七天无理由退货政策适用于签收后七天内，商品需保持完好。", tenant_id="t1")
     context = service.search_context("E-1024 散热异常怎么处理")
@@ -40,7 +40,7 @@ def test_fallback_to_sparse_when_provider_fails() -> None:
         def embed(self, texts: list[str]) -> list[list[float]]:
             raise RuntimeError("embedding 模型不可用")
 
-    service = KnowledgeService(provider=BrokenProvider(), reranker=FakeReranker())
+    service = KnowledgeService(provider=BrokenProvider(), reranker=FakeReranker(), vector_mode="memory")
     service.add_document("manual", "P1001 库存不足，需要尽快补货。", tenant_id="t1")
     context = service.search_context("P1001 库存")
     assert "P1001" in context
