@@ -1,49 +1,81 @@
 package com.huizhitong.tool.service;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.huizhitong.tool.domain.ToolDefinition;
+import com.huizhitong.tool.domain.ToolGrant;
+import com.huizhitong.tool.mapper.ToolGrantMapper;
+import com.huizhitong.tool.mapper.ToolRegistryMapper;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
 import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicLong;
-import java.util.Set;
-import java.util.HashSet;
 
 @Service
 public class ToolRegistryService {
-    private final AtomicLong sequence = new AtomicLong(0);
-    private final Map<Long, ToolDefinition> tools = new ConcurrentHashMap<>();
-    private final Map<String, Set<Long>> grants = new ConcurrentHashMap<>();
+    private final ToolRegistryMapper toolMapper;
+    private final ToolGrantMapper grantMapper;
 
+    public ToolRegistryService(ToolRegistryMapper toolMapper, ToolGrantMapper grantMapper) {
+        this.toolMapper = toolMapper;
+        this.grantMapper = grantMapper;
+    }
+
+    /** 注册工具；tool_name 已存在时直接返回已有记录，保证启动注册幂等。 */
     public ToolDefinition register(ToolDefinition definition) {
-        definition.setId(sequence.incrementAndGet());
-        tools.put(definition.getId(), definition);
+        ToolDefinition existing = toolMapper.selectOne(new LambdaQueryWrapper<ToolDefinition>()
+                .eq(ToolDefinition::getToolName, definition.getToolName()));
+        if (existing != null) {
+            return existing;
+        }
+        toolMapper.insert(definition);
         return definition;
     }
 
     public List<ToolDefinition> list(Long tenantId, boolean enabledOnly) {
-        return tools.values().stream()
-                .filter(item -> tenantId == null || tenantId.equals(item.getTenantId()))
-                .filter(item -> !enabledOnly || Integer.valueOf(1).equals(item.getEnabled()))
-                .toList();
+        LambdaQueryWrapper<ToolDefinition> wrapper = new LambdaQueryWrapper<>();
+        if (tenantId != null) {
+            wrapper.eq(ToolDefinition::getTenantId, tenantId);
+        }
+        if (enabledOnly) {
+            wrapper.eq(ToolDefinition::getEnabled, 1);
+        }
+        return toolMapper.selectList(wrapper);
     }
 
     public ToolDefinition toggle(Long id, boolean enabled) {
-        ToolDefinition definition = tools.get(id);
+        ToolDefinition definition = toolMapper.selectById(id);
         if (definition == null) throw new IllegalArgumentException("工具不存在: " + id);
         definition.setEnabled(enabled ? 1 : 0);
+        toolMapper.updateById(definition);
         return definition;
     }
 
+    @Transactional
     public void grant(String agentType, Long tenantId, Long toolId) {
-        if (!tools.containsKey(toolId)) throw new IllegalArgumentException("工具不存在: " + toolId);
-        grants.computeIfAbsent(key(agentType, tenantId), ignored -> ConcurrentHashMap.newKeySet()).add(toolId);
+        if (toolMapper.selectById(toolId) == null) throw new IllegalArgumentException("工具不存在: " + toolId);
+        Long count = grantMapper.selectCount(new LambdaQueryWrapper<ToolGrant>()
+                .eq(ToolGrant::getAgentType, agentType)
+                .eq(ToolGrant::getTenantId, tenantId)
+                .eq(ToolGrant::getToolId, toolId));
+        if (count == null || count == 0) {
+            ToolGrant grant = new ToolGrant();
+            grant.setAgentType(agentType);
+            grant.setTenantId(tenantId);
+            grant.setToolId(toolId);
+            grantMapper.insert(grant);
+        }
     }
 
     public List<ToolDefinition> available(String agentType, Long tenantId) {
-        Set<Long> ids = grants.getOrDefault(key(agentType, tenantId), Set.of());
-        return ids.stream().map(tools::get).filter(item -> item != null && Integer.valueOf(1).equals(item.getEnabled())).toList();
+        List<ToolGrant> grants = grantMapper.selectList(new LambdaQueryWrapper<ToolGrant>()
+                .eq(ToolGrant::getAgentType, agentType)
+                .eq(ToolGrant::getTenantId, tenantId));
+        if (grants.isEmpty()) {
+            return List.of();
+        }
+        List<Long> toolIds = grants.stream().map(ToolGrant::getToolId).toList();
+        return toolMapper.selectList(new LambdaQueryWrapper<ToolDefinition>()
+                .in(ToolDefinition::getId, toolIds)
+                .eq(ToolDefinition::getEnabled, 1));
     }
-
-    private String key(String agentType, Long tenantId) { return tenantId + ":" + agentType; }
 }
