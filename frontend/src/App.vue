@@ -243,7 +243,42 @@ async function addDocument() {
   await loadKnowledge()
 }
 
-onMounted(() => { loadTools(); loadKnowledge() })
+const audits = ref([])
+const auditLoading = ref(false)
+const auditError = ref('')
+const auditFilter = ref('')
+const auditTotal = computed(() => audits.value.length)
+const auditAvg = computed(() => audits.value.length ? Math.round(audits.value.reduce((sum, item) => sum + (item.latency_ms || 0), 0) / audits.value.length) : 0)
+const auditDone = computed(() => audits.value.filter(item => item.status === 'COMPLETED').length)
+
+function statusClass(status) {
+  if (status === 'COMPLETED') return 'ok'
+  if (status === 'WAITING_RAG' || status === 'NEED_INPUT') return 'warn'
+  if (status === 'FORBIDDEN' || status === 'ERROR') return 'bad'
+  return 'info'
+}
+
+function formatTime(value) {
+  if (!value) return '-'
+  const date = new Date(String(value).replace(' ', 'T'))
+  if (isNaN(date.getTime())) return String(value)
+  const pad = n => String(n).padStart(2, '0')
+  return date.getFullYear() + '-' + pad(date.getMonth() + 1) + '-' + pad(date.getDate()) + ' ' + pad(date.getHours()) + ':' + pad(date.getMinutes()) + ':' + pad(date.getSeconds())
+}
+
+async function loadAudits() {
+  auditLoading.value = true
+  try {
+    const query = auditFilter.value ? '?agent_type=' + encodeURIComponent(auditFilter.value) : ''
+    const response = await fetch('/api/agent/audit/calls' + query)
+    if (!response.ok) throw new Error('审计服务暂不可用')
+    audits.value = await response.json()
+    auditError.value = ''
+  } catch (e) { auditError.value = e.message }
+  finally { auditLoading.value = false }
+}
+
+onMounted(() => { loadTools(); loadKnowledge(); loadAudits() })
 onBeforeUnmount(() => clearInterval(typeTimer))
 </script>
 
@@ -258,7 +293,7 @@ onBeforeUnmount(() => clearInterval(typeTimer))
         <a :class="{ selected: view === 'chat' }" @click="view = 'chat'">智能体对话</a>
         <a :class="{ selected: view === 'tools' }" @click="view = 'tools'">工具目录</a>
         <a :class="{ selected: view === 'knowledge' }" @click="view = 'knowledge'">知识库</a>
-        <a class="soon" title="调用审计面板即将上线"><span>调用审计</span><em>即将上线</em></a>
+        <a :class="{ selected: view === 'audit' }" @click="view = 'audit'">调用审计</a>
       </nav>
       <div class="rail-foot"><i class="pulse"></i>LOCAL / DEV · v0.2</div>
     </aside>
@@ -363,6 +398,53 @@ onBeforeUnmount(() => clearInterval(typeTimer))
             <div class="server">↳ {{ tool.serverName }} <span>{{ tool.enabled === 1 ? '已启用' : '已停用' }}</span></div>
             <button class="toggle" @click="toggleTool(tool)">{{ tool.enabled === 1 ? '停用工具' : '启用工具' }}</button>
           </article>
+        </div>
+      </template>
+
+      <!-- ============ 调用审计 ============ -->
+      <template v-else-if="view === 'audit'">
+        <header>
+          <div>
+            <p class="eyebrow">CONTROL ROOM / CALL AUDIT</p>
+            <h1>调用审计</h1>
+            <p class="sub">智能体调用记录异步落库：优先 RabbitMQ 发布，由独立 worker 写 MySQL；MQ 不可用时自动降级直写。</p>
+          </div>
+          <div class="actions">
+            <select v-model="auditFilter" class="agent-select" @change="loadAudits">
+              <option value="">全部智能体</option>
+              <option value="assistant">通用助手</option>
+              <option value="knowledge">知识问答</option>
+              <option value="inventory">库存分析</option>
+              <option value="ticket">工单处理</option>
+            </select>
+            <button @click="loadAudits">刷新 ↻</button>
+          </div>
+        </header>
+        <div class="stats">
+          <div><span>已记录调用</span><strong>{{ auditTotal }}</strong></div>
+          <div><span>平均耗时</span><strong>{{ auditAvg }} ms</strong></div>
+          <div><span>已完成</span><strong class="online">{{ auditDone }}</strong></div>
+        </div>
+        <div v-if="auditLoading" class="empty">正在读取调用记录…</div>
+        <div v-else-if="auditError" class="empty danger">{{ auditError }}<button @click="loadAudits">重试</button></div>
+        <div v-else class="audit-wrap">
+          <table class="audit-table">
+            <thead>
+              <tr><th>时间</th><th>会话</th><th>智能体</th><th>问题</th><th>状态</th><th>节点</th><th>耗时</th></tr>
+            </thead>
+            <tbody>
+              <tr v-for="item in audits" :key="item.id">
+                <td class="mono">{{ formatTime(item.created_at) }}</td>
+                <td class="mono">{{ item.conversation_id }}</td>
+                <td>{{ item.agent_type }}</td>
+                <td class="msg" :title="item.message">{{ item.message }}</td>
+                <td><span :class="['badge', statusClass(item.status)]">{{ item.status }}</span></td>
+                <td class="mono">{{ item.node_count }}</td>
+                <td class="mono">{{ item.latency_ms }} ms</td>
+              </tr>
+              <tr v-if="audits.length === 0"><td colspan="7" class="empty-row">暂无调用记录</td></tr>
+            </tbody>
+          </table>
         </div>
       </template>
 
@@ -615,6 +697,21 @@ button:disabled { opacity: 0.55; cursor: not-allowed; box-shadow: none; }
 .empty { text-align: center; padding: 44px 0; color: var(--muted); font-size: 13px; }
 .empty.danger { color: var(--danger); }
 .empty button { margin-top: 14px; }
+
+.audit-wrap { background: #fff; border: 1px solid var(--line); border-radius: 16px; box-shadow: 0 12px 28px rgba(55, 94, 140, 0.09); overflow: auto; }
+.audit-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.audit-table th { text-align: left; padding: 13px 16px; font-size: 11px; letter-spacing: 0.12em; color: var(--muted); background: var(--blue-soft); border-bottom: 1px solid var(--line); white-space: nowrap; }
+.audit-table td { padding: 12px 16px; border-bottom: 1px solid #eaf1f9; color: var(--ink-2); vertical-align: middle; }
+.audit-table tr:last-child td { border-bottom: none; }
+.audit-table tr:hover td { background: #f7fbff; }
+.audit-table .msg { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mono { font-family: 'DM Mono', monospace; font-size: 12px; color: var(--muted); white-space: nowrap; }
+.badge { display: inline-block; padding: 3px 10px; border-radius: 99px; font-size: 11px; font-weight: 700; }
+.badge.ok { color: var(--good); background: #e4f7f0; }
+.badge.warn { color: #b7791f; background: #fdf3e1; }
+.badge.bad { color: var(--danger); background: #fde9ec; }
+.badge.info { color: var(--blue-deep); background: var(--blue-soft); }
+.empty-row { text-align: center; color: var(--muted); padding: 30px 0; }
 
 @media (max-width: 860px) {
   .rail { width: 76px; padding: 20px 10px; }
