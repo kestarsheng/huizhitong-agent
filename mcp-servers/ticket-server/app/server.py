@@ -9,34 +9,47 @@ from mcp.server.fastmcp import FastMCP
 mcp = FastMCP("huizhitong-ticket")
 
 _PRIORITIES = {"LOW", "MEDIUM", "HIGH"}
-_DEFAULT_TMP = Path(os.environ.get("TEMP", os.path.expanduser("~"))) / "huizhitong-ticket"
-_DATA_DIR = Path(os.getenv("TICKET_DATA_DIR", _DEFAULT_TMP))
-_DB_PATH = _DATA_DIR / "tickets.db"
+_STORAGE = os.getenv("TICKET_STORAGE", "sqlite").lower()
+_PH = "?" if _STORAGE == "sqlite" else "%s"
+
+_TABLE_SQL = """CREATE TABLE IF NOT EXISTS tickets (
+    ticket_id VARCHAR(32) PRIMARY KEY,
+    subject VARCHAR(255) NOT NULL,
+    description TEXT NOT NULL,
+    priority VARCHAR(16) NOT NULL,
+    customer_id VARCHAR(64) NOT NULL DEFAULT '',
+    status VARCHAR(16) NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+)"""
+_INSERT_SQL = f"INSERT INTO tickets (ticket_id, subject, description, priority, customer_id, status) VALUES ({_PH}, {_PH}, {_PH}, {_PH}, {_PH}, {_PH})"
+_SELECT_SQL = f"SELECT ticket_id, subject, description, priority, customer_id, status FROM tickets WHERE ticket_id = {_PH}"
+_MAX_ID_CAST = "UNSIGNED" if _STORAGE == "mysql" else "INTEGER"
+_MAX_ID_SQL = f"SELECT MAX(CAST(SUBSTR(ticket_id, 4) AS {_MAX_ID_CAST})) FROM tickets"
 
 
-def _connect() -> sqlite3.Connection:
-    _DATA_DIR.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(_DB_PATH)
-    conn.execute(
-        """CREATE TABLE IF NOT EXISTS tickets (
-            ticket_id TEXT PRIMARY KEY,
-            subject TEXT NOT NULL,
-            description TEXT NOT NULL,
-            priority TEXT NOT NULL,
-            customer_id TEXT NOT NULL DEFAULT '',
-            status TEXT NOT NULL
-        )"""
-    )
+def _connect():
+    """按 TICKET_STORAGE 返回 MySQL 或 SQLite 连接，并保证库表存在。"""
+    if _STORAGE == "mysql":
+        import pymysql
+        host = os.getenv("TICKET_MYSQL_HOST", "localhost")
+        port = int(os.getenv("TICKET_MYSQL_PORT", "3306"))
+        user = os.getenv("TICKET_MYSQL_USER", "root")
+        password = os.getenv("TICKET_MYSQL_PASSWORD", "root")
+        database = os.getenv("TICKET_MYSQL_DATABASE", "huizhitong")
+        bootstrap = pymysql.connect(host=host, port=port, user=user, password=password, charset="utf8mb4")
+        with bootstrap.cursor() as cursor:
+            cursor.execute(f"CREATE DATABASE IF NOT EXISTS `{database}` DEFAULT CHARACTER SET utf8mb4")
+        bootstrap.close()
+        conn = pymysql.connect(host=host, port=port, user=user, password=password, database=database, charset="utf8mb4", autocommit=True)
+        conn.execute(_TABLE_SQL)
+        return conn
+    default_tmp = Path(os.environ.get("TEMP", os.path.expanduser("~"))) / "huizhitong-ticket"
+    data_dir = Path(os.getenv("TICKET_DATA_DIR", default_tmp))
+    data_dir.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(data_dir / "tickets.db")
+    conn.execute(_TABLE_SQL)
     conn.commit()
     return conn
-
-
-def _next_ticket_id(conn: sqlite3.Connection) -> str:
-    row = conn.execute(
-        "SELECT MAX(CAST(SUBSTR(ticket_id, 4) AS INTEGER)) FROM tickets"
-    ).fetchone()
-    sequence = (row[0] if row and row[0] else 1000) + 1
-    return f"TK-{sequence}"
 
 
 @mcp.tool()
@@ -47,34 +60,22 @@ def create_ticket(subject: str, description: str, priority: str = "MEDIUM", cust
     normalized = priority.upper()
     if normalized not in _PRIORITIES:
         return {"created": False, "message": f"优先级仅支持 {sorted(_PRIORITIES)}"}
-    ticket = {
-        "ticket_id": "",
-        "subject": subject.strip(),
-        "description": description.strip(),
-        "priority": normalized,
-        "customer_id": customer_id.strip(),
-        "status": "OPEN",
-    }
     with _connect() as conn:
-        ticket["ticket_id"] = _next_ticket_id(conn)
-        conn.execute(
-            "INSERT INTO tickets (ticket_id, subject, description, priority, customer_id, status) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (ticket["ticket_id"], ticket["subject"], ticket["description"],
-             ticket["priority"], ticket["customer_id"], ticket["status"]),
-        )
-    return {"created": True, **ticket}
+        row = conn.execute(_MAX_ID_SQL).fetchone()
+        sequence = (row[0] if row and row[0] else 1000) + 1
+        ticket_id = f"TK-{sequence}"
+        conn.execute(_INSERT_SQL, (
+            ticket_id, subject.strip(), description.strip(), normalized, customer_id.strip(), "OPEN",
+        ))
+    return {"created": True, "ticket_id": ticket_id, "subject": subject.strip(), "description": description.strip(),
+            "priority": normalized, "customer_id": customer_id.strip(), "status": "OPEN"}
 
 
 @mcp.tool()
 def query_ticket(ticket_id: str) -> dict:
     """按工单号查询工单详情。"""
     with _connect() as conn:
-        row = conn.execute(
-            "SELECT ticket_id, subject, description, priority, customer_id, status "
-            "FROM tickets WHERE ticket_id = ?",
-            (ticket_id,),
-        ).fetchone()
+        row = conn.execute(_SELECT_SQL, (ticket_id,)).fetchone()
     if row is None:
         return {"found": False, "ticket_id": ticket_id, "message": "未找到工单"}
     keys = ("ticket_id", "subject", "description", "priority", "customer_id", "status")
