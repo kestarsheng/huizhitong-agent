@@ -22,19 +22,23 @@ const chips = [
   { agent: 'knowledge', text: 'E-1024 故障代码怎么处理？' },
   { agent: 'inventory', text: '查一下商品 P1001 的库存与风险' },
   { agent: 'ticket', text: '打印机无法连接，请帮我创建报修工单' },
+  { agent: 'assistant', text: '查一下 P1002 库存，顺便问 E-1024 怎么处理' },
   { agent: 'assistant', text: '你好，介绍一下你能做什么？' },
 ]
 
 const NODE_LABELS = {
   classify_intent: { label: '意图分类', icon: '🧭' },
+  plan_task: { label: '任务规划', icon: '🗺️' },
   inventory: { label: '库存查询', icon: '📦' },
   ticket: { label: '工单处理', icon: '🎫' },
   knowledge: { label: '知识检索', icon: '📚' },
   general: { label: '通用回答', icon: '💬' },
+  validate_result: { label: '结果校验', icon: '✅' },
 }
 
 const STATUS_TEXT = {
   RUNNING: '编排运行中',
+  PLANNED: '任务规划完成',
   CLASSIFIED: '意图已分类',
   COMPLETED: '回答完成',
   NEED_INPUT: '需要补充信息',
@@ -93,7 +97,10 @@ function handleEvent(msg, raw) {
   if (event === 'accepted') {
     msg.status = 'RUNNING'
   } else if (event === 'node') {
-    msg.nodes.push({ node: payload.node, state: payload.state || {} })
+    const pill = { node: payload.node, state: payload.state || {} }
+    const last = msg.nodes[msg.nodes.length - 1]
+    if (last && last.node === pill.node) last.state = pill.state
+    else msg.nodes.push(pill)
     const st = payload.state && payload.state.status
     if (st && st !== 'RUNNING') msg.status = st
     scrollBottom()
