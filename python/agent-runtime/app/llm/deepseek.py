@@ -1,4 +1,10 @@
+"""DeepSeek 模型适配（向后兼容层）。
+
+新代码请使用 app.llm.gateway：支持 DeepSeek + 通义千问双模型路由与故障降级。
+"""
 import os
+
+from app.llm.gateway import generate_answer  # noqa: F401  re-export
 
 
 def deepseek_enabled() -> bool:
@@ -17,15 +23,3 @@ def get_deepseek_model():
         temperature=float(os.getenv("DEEPSEEK_TEMPERATURE", "0.2")),
         max_tokens=int(os.getenv("DEEPSEEK_MAX_TOKENS", "1024")),
     )
-
-
-async def generate_answer(system_prompt: str, user_message: str) -> str | None:
-    model = get_deepseek_model()
-    if model is None:
-        return None
-    response = await model.ainvoke([
-        ("system", system_prompt),
-        ("human", user_message),
-    ])
-    return str(response.content)
-

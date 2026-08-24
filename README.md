@@ -17,6 +17,7 @@
 - LangGraph 多智能体编排：意图分类 → 任务规划 → 并行扇出 → 结果校验，SSE 流式输出
 - RAG 混合检索：BGE-M3 稠密 + 稀疏 → RRF 融合 → BGE-reranker-large 重排，Milvus / 内存向量库自动切换
 - MCP 工具接入：库存查询、工单查询等工具经 MCP 协议统一封装，支持注册与目录刷新
+- 双模型网关：DeepSeek 主模型 + 通义千问降级路由，主模型异常自动切换（LLM_PROVIDER / LLM_FALLBACK 可配）
 - 调用审计：RabbitMQ 异步落库 MySQL，MQ 故障自动降级直写，独立 worker 消费并自动重连
 - Java 微服务骨架：Spring Cloud Gateway + Nacos 注册发现、工具服务 REST 接口
 
