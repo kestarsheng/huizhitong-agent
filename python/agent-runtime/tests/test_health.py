@@ -64,12 +64,12 @@ def test_inventory_tool_node() -> None:
     assert "建议补货" in response.json()["answer"]
 
 
-def test_deepseek_disabled_fallback(monkeypatch) -> None:
+def test_llm_disabled_fallback(monkeypatch) -> None:
     monkeypatch.setenv("DEEPSEEK_ENABLED", "false")
+    monkeypatch.delenv("QWEN_API_KEY", raising=False)
     response = client.post(
         "/internal/agents/run",
         json={"agent_type": "general", "conversation_id": "general-1", "message": "你好"},
     )
     assert response.status_code == 200
-    assert "未启用 DeepSeek" in response.json()["answer"]
-
+    assert "未启用可用的大模型" in response.json()["answer"]

@@ -7,7 +7,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import Send
 
 from app.graph.state import RESET_MARKER, AgentState
-from app.llm.deepseek import generate_answer
+from app.llm.gateway import generate_answer
 from app.rag.knowledge import knowledge_service
 from app.tools.inventory_gateway import inventory_gateway, mcp_inventory_gateway
 from app.tools.registry_client import tool_registry_client
@@ -146,7 +146,7 @@ async def general_node(state: AgentState) -> AgentState:
         state["user_message"],
     )
     if answer is None:
-        answer = "已接收你的问题，当前未启用 DeepSeek 模型或暂未绑定对应业务能力。"
+        answer = "当前未启用可用的大模型（DeepSeek / 通义千问），请联系管理员配置 API Key。"
     return _step_result(answer, "COMPLETED")
 
 
