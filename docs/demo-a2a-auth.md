@@ -34,8 +34,8 @@ powershell -ExecutionPolicy Bypass -File scripts/start-services.ps1
 
 | 路径 | 入口 | 鉴权 | 用途 |
 | --- | --- | --- | --- |
-| A. 前端默认链路 | vite 代理 `/api/agent/*` → Agent Runtime 8000 | 内部链路 | 聊天 SSE 走这里 |
-| B. 网关统一入口 | Gateway 8080 `/api/agents/**` → Agent Runtime | JWT 全局过滤 | 跨语言统一入口（当前为预留态，见 5.1） |
+| A. 前端主链路 | 5173 → vite 代理 `/api/agent/*` → Gateway 8080（JWT 校验）→ Agent Runtime 8000 | 网关统一鉴权 | 聊天 SSE / 知识库 / 审计均走这里 |
+| B. 网关直连 | Gateway 8080 `/api/agent/**` → Agent Runtime | JWT 全局过滤 | curl 或第三方系统统一接入 |
 
 ## 1. 鉴权链路演示（JWT + 网关统一鉴权 + 服务端二次校验）
 
@@ -86,7 +86,8 @@ curl -i http://localhost:8083/internal/tools
 
 - **网关统一鉴权**：所有 `/api/**` 请求先过 `JwtAuthGlobalFilter`，白名单（login / health / actuator）外无 token 一律 401，业务服务无需各自重复做登录态校验；
 - **认证信息透传**：网关解析 JWT 后透传 `X-User-Id / X-Username / X-User-Role`，下游据此做角色 / 租户级 RBAC；
-- **服务端二次校验**：Tool Service 的 Spring Security 再验一次 JWT 并写入 SecurityContext，防止绕过网关直连；密钥由 `JWT_SECRET` 统一配置（网关与工具服务共享）。
+- **服务端二次校验**：Tool Service 的 Spring Security 再验一次 JWT 并写入 SecurityContext，防止绕过网关直连；密钥由 JWT_SECRET 统一配置（网关与工具服务共享）。
+- **AI 服务统一收口**：/api/agent/** 与 /api/internal/** 同样经过网关 JWT 过滤，AI 接口不再裸奔，第三方接入统一走网关；
 
 ## 2. A2A 跨智能体协同演示（LangGraph + MCP）
 
@@ -109,7 +110,7 @@ flowchart LR
 
 1. 打开「智能体对话」，智能体选择「通用助手」，租户 ID 填 `1`；
 2. 点击示例问题：**「查一下 P1002 库存，顺便问 E-1024 怎么处理」**；
-3. 对话气泡内会实时滚动节点执行轨迹（SSE 逐节点推送）：
+3. 对话气泡内会实时滚动节点执行轨迹（SSE 逐节点推送；请求经 Gateway JWT 校验后转发到 Agent Runtime）：
 
    ```
    🧭 意图分类 → 🗺️ 任务规划 → 📦 库存查询 + 📚 知识检索（并行） → ✅ 结果校验 → 🤝 协同汇总 → 完成
@@ -131,10 +132,13 @@ flowchart LR
 curl 直连版（观察 SSE 原始事件）：
 
 ```bash
-curl -N -X POST http://localhost:8000/internal/agents/stream \
+curl -N -X POST http://localhost:8080/api/agent/agents/stream \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <TOKEN>" \
   -d '{"agent_type":"assistant","conversation_id":"demo-a2a-001","message":"查一下 P1002 库存，顺便问 E-1024 怎么处理","tenant_id":1,"stream":true}'
 ```
+
+> 直连 Agent Runtime 8000 仅限本机调试；业务链路一律从网关进入。
 
 ### 2.4 讲解要点
 
@@ -169,14 +173,15 @@ RabbitMQ 在线时，审计消息经 worker 异步入库（管理台 `http://loc
 | SSE 看不到节点事件 | 浏览器 Network 过滤 EventStream；确认请求到达 8000 端口 |
 | 审计无数据 | 查看 RabbitMQ 是否 healthy；降级时审计直写 MySQL 仍应有记录 |
 
-### 5.1 网关 AI 路由（预留态）
+### 5.1 网关 AI 路由（已打通）
 
-Gateway 已声明 `/api/agents/**` 路由，但当前有两处未打通，直接调用会 404/超时：
+AI 服务统一入口已打通：网关路由 `Path=/api/agent/**` + `RewritePath=/api/agent/(?<segment>.*), /internal/${segment}` → Agent Runtime（`AGENT_SERVICE_URI` 默认 `http://localhost:8000`，可在 `scripts/env.local.ps1` 覆盖）。前端聊天、知识库、审计请求均改走网关并携带 JWT。
 
-- 默认 `AGENT_SERVICE_URI` 指向 `8081`，而 Agent Runtime 实际监听 `8000`；
-- 路由未加 `RewritePath`，`/api/agents/*` 不会改写成 Agent Runtime 的 `/internal/*` 前缀。
+实测结果：
 
-打通方式：在 `scripts/env.local.ps1` 设置 `$env:AGENT_SERVICE_URI='http://localhost:8000'`，并在网关路由中补充 `RewritePath=/api/agents/(?<segment>.*), /internal/${segment}` 后重启网关。打通后即可演示"业务请求统一从网关进、AI 服务也要过 JWT"的完整跨语言链路。
+- 无 token 访问 `/api/agent/**` → 网关 401；
+- 带 token → 200，SSE 事件流 `accepted → node×6 → done` 正常；
+- 直连 Agent Runtime 8000 仍可用（内部链路，无鉴权），生产路径统一从网关进入。
 
 ## 6. 十分钟演示脚本（话术版）
 
