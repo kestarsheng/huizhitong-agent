@@ -2,14 +2,18 @@
 
 运行：python -m app.audit.worker
 前置：pip install pika，且配置 AUDIT_MQ_URL。
+连接中断时自动重连，重试间隔由 AUDIT_WORKER_RECONNECT_DELAY 控制（默认 5 秒）。
 """
 import json
 import logging
 import os
+import time
 
 import pymysql
 
 logger = logging.getLogger(__name__)
+
+_RECONNECT_DELAY = float(os.getenv("AUDIT_WORKER_RECONNECT_DELAY", "5"))
 
 _INSERT_SQL = (
     "INSERT INTO audit_call "
@@ -49,32 +53,53 @@ def _insert(config: dict, payload: dict) -> None:
         conn.close()
 
 
-def main() -> None:
+def _consume(config: dict, mq_url: str) -> None:
+    """连接 RabbitMQ 并阻塞消费；连接被断开时抛异常，由 main 循环重连。"""
     import pika
+
+    connection = pika.BlockingConnection(pika.URLParameters(mq_url))
+    try:
+        channel = connection.channel()
+        channel.exchange_declare(exchange="huizhitong.audit", exchange_type="topic", durable=True)
+        channel.queue_declare(queue="audit.call.queue", durable=True)
+        channel.queue_bind(queue="audit.call.queue", exchange="huizhitong.audit", routing_key="audit.call")
+        channel.basic_qos(prefetch_count=10)
+
+        def callback(ch, method, properties, body) -> None:
+            try:
+                payload = json.loads(body.decode("utf-8"))
+                _insert(config, payload)
+                ch.basic_ack(method.delivery_tag)
+            except Exception as exc:
+                logger.error("审计消息处理失败: %s", exc)
+                ch.basic_nack(method.delivery_tag, requeue=True)
+
+        channel.basic_consume(queue="audit.call.queue", on_message_callback=callback)
+        print("audit worker started, waiting for messages...")
+        channel.start_consuming()
+    finally:
+        try:
+            connection.close()
+        except Exception:
+            pass
+
+
+def main() -> None:
+    import pika  # noqa: F401 提前暴露依赖缺失
 
     mq_url = os.getenv("AUDIT_MQ_URL", "")
     if not mq_url:
         raise SystemExit("AUDIT_MQ_URL 未配置")
     config = _mysql_config()
-    connection = pika.BlockingConnection(pika.URLParameters(mq_url))
-    channel = connection.channel()
-    channel.exchange_declare(exchange="huizhitong.audit", exchange_type="topic", durable=True)
-    channel.queue_declare(queue="audit.call.queue", durable=True)
-    channel.queue_bind(queue="audit.call.queue", exchange="huizhitong.audit", routing_key="audit.call")
-    channel.basic_qos(prefetch_count=10)
-
-    def callback(ch, method, properties, body) -> None:
+    while True:
         try:
-            payload = json.loads(body.decode("utf-8"))
-            _insert(config, payload)
-            ch.basic_ack(method.delivery_tag)
+            _consume(config, mq_url)
+        except KeyboardInterrupt:
+            logger.info("audit worker 手动停止")
+            return
         except Exception as exc:
-            logger.error("审计消息处理失败: %s", exc)
-            ch.basic_nack(method.delivery_tag, requeue=True)
-
-    channel.basic_consume(queue="audit.call.queue", on_message_callback=callback)
-    print("audit worker started, waiting for messages...")
-    channel.start_consuming()
+            logger.error("审计消费连接中断，%.0f 秒后重连: %s", _RECONNECT_DELAY, exc)
+            time.sleep(_RECONNECT_DELAY)
 
 
 if __name__ == "__main__":
