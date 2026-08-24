@@ -1,6 +1,7 @@
 package com.huizhitong.tool.controller;
 
 import com.huizhitong.tool.domain.ToolDefinition;
+import com.huizhitong.tool.domain.ToolGrant;
 import com.huizhitong.tool.domain.ToolGrantRequest;
 import com.huizhitong.tool.service.ToolRegistryService;
 import jakarta.validation.Valid;
@@ -30,6 +31,17 @@ public class ToolRegistryController {
     @PostMapping("/grants")
     public void grant(@Valid @RequestBody ToolGrantRequest request) {
         service.grant(request.getAgentType(), request.getTenantId(), request.getToolId());
+    }
+
+    @GetMapping("/grants")
+    public List<ToolGrant> listGrants(@RequestParam(required = false) String agentType,
+                                      @RequestParam(required = false) Long tenantId) {
+        return service.listGrants(agentType, tenantId);
+    }
+
+    @DeleteMapping("/grants")
+    public void revoke(@RequestParam String agentType, @RequestParam Long tenantId, @RequestParam Long toolId) {
+        service.revoke(agentType, tenantId, toolId);
     }
 
     @GetMapping("/available")

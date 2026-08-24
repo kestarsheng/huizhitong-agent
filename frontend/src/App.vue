@@ -9,6 +9,11 @@ const messages = ref([])
 const agentCatalog = ref([])
 const catalogLoading = ref(true)
 const catalogError = ref('')
+const grantAgentType = ref('inventory')
+const grantTenantId = ref(1)
+const grants = ref([])
+const grantLoading = ref(false)
+const grantError = ref('')
 const streaming = ref(false)
 const chatBody = ref(null)
 let conversationId = 'conv-' + Date.now()
@@ -183,6 +188,7 @@ const error = ref('')
 const showForm = ref(false)
 const form = ref({ toolName: '', serverName: '', description: '' })
 const active = computed(() => tools.value.filter(t => t.enabled === 1).length)
+const grantedToolIds = computed(() => new Set(grants.value.map(g => g.toolId)))
 
 async function loadTools() {
   loading.value = true
@@ -197,6 +203,35 @@ async function loadTools() {
   finally { loading.value = false }
 }
 
+async function loadGrants() {
+  grantLoading.value = true
+  try {
+    const query = '?agentType=' + encodeURIComponent(grantAgentType.value) + '&tenantId=' + grantTenantId.value
+    const response = await fetch('/api/internal/tools/grants' + query)
+    if (!response.ok) throw new Error('工具服务暂不可用')
+    grants.value = await response.json()
+    grantError.value = ''
+  } catch (e) { grantError.value = e.message }
+  finally { grantLoading.value = false }
+}
+
+async function toggleGrant(tool) {
+  const granted = grantedToolIds.value.has(tool.id)
+  const base = '/api/internal/tools/grants'
+  const query = '?agentType=' + encodeURIComponent(grantAgentType.value) + '&tenantId=' + grantTenantId.value
+  if (granted) {
+    const response = await fetch(base + query + '&toolId=' + tool.id, { method: 'DELETE' })
+    if (!response.ok) { grantError.value = '撤销授权失败'; return }
+  } else {
+    const response = await fetch(base, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ agentType: grantAgentType.value, tenantId: grantTenantId.value, toolId: tool.id }),
+    })
+    if (!response.ok) { grantError.value = '授权失败'; return }
+  }
+  await loadGrants()
+}
 async function loadAgentCatalog() {
   catalogLoading.value = true
   try {
@@ -293,7 +328,7 @@ async function loadAudits() {
   finally { auditLoading.value = false }
 }
 
-onMounted(() => { loadTools(); loadAgentCatalog(); loadKnowledge(); loadAudits() })
+onMounted(() => { loadTools(); loadAgentCatalog(); loadGrants(); loadKnowledge(); loadAudits() })
 onBeforeUnmount(() => clearInterval(typeTimer))
 </script>
 
@@ -308,6 +343,7 @@ onBeforeUnmount(() => clearInterval(typeTimer))
         <a :class="{ selected: view === 'chat' }" @click="view = 'chat'">智能体对话</a>
         <a :class="{ selected: view === 'agents' }" @click="view = 'agents'">智能体目录</a>
         <a :class="{ selected: view === 'tools' }" @click="view = 'tools'">工具目录</a>
+        <a :class="{ selected: view === 'grants' }" @click="view = 'grants'">授权管理</a>
         <a :class="{ selected: view === 'knowledge' }" @click="view = 'knowledge'">知识库</a>
         <a :class="{ selected: view === 'audit' }" @click="view = 'audit'">调用审计</a>
       </nav>
@@ -449,6 +485,46 @@ onBeforeUnmount(() => clearInterval(typeTimer))
         </div>
       </template>
 
+      <!-- ============ 授权管理 ============ -->
+      <template v-else-if="view === 'grants'">
+        <header>
+          <div>
+            <p class="eyebrow">CONTROL ROOM / TOOL GRANTS</p>
+            <h1>授权管理</h1>
+            <p class="sub">按智能体类型与租户授权工具；对话中未授权的工具会返回 FORBIDDEN，授权后立即可用。</p>
+          </div>
+          <div class="actions">
+            <select v-model="grantAgentType" class="agent-select" @change="loadGrants">
+              <option value="inventory">库存分析</option>
+              <option value="ticket">工单处理</option>
+              <option value="knowledge">知识问答</option>
+              <option value="assistant">通用助手</option>
+            </select>
+            <input v-model.number="grantTenantId" class="tenant-input" type="number" min="1" placeholder="租户 ID" @change="loadGrants" />
+            <button @click="loadGrants">刷新授权 ↻</button>
+          </div>
+        </header>
+        <div class="stats">
+          <div><span>当前智能体</span><strong>{{ grantAgentType }}</strong></div>
+          <div><span>租户 ID</span><strong>{{ grantTenantId }}</strong></div>
+          <div><span>已授权工具</span><strong class="online">{{ grants.length }}</strong></div>
+        </div>
+        <div v-if="grantLoading" class="empty">正在读取授权记录…</div>
+        <div v-else-if="grantError" class="empty danger">{{ grantError }}<button @click="loadGrants">重试</button></div>
+        <div v-else class="tool-grid">
+          <article v-for="tool in tools" :key="tool.id" class="tool-card">
+            <div class="card-top">
+              <span class="tool-id">TOOL / {{ String(tool.id).padStart(2, '0') }}</span>
+              <i :class="['dot', grantedToolIds.has(tool.id) ? 'on' : 'off']"></i>
+            </div>
+            <h2>{{ tool.toolName }}</h2>
+            <p>{{ tool.description }}</p>
+            <div class="server">↳ {{ tool.serverName }} <span>{{ grantedToolIds.has(tool.id) ? '已授权' : '未授权' }}</span></div>
+            <button class="toggle" @click="toggleGrant(tool)">{{ grantedToolIds.has(tool.id) ? '撤销授权' : '授权工具' }}</button>
+          </article>
+          <div v-if="tools.length === 0" class="empty">暂无已注册工具，请先在「工具目录」注册。</div>
+        </div>
+      </template>
       <!-- ============ 调用审计 ============ -->
       <template v-else-if="view === 'audit'">
         <header>
