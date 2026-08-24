@@ -14,4 +14,5 @@ public class SysUser {
     private String passwordHash;
     private String role;
     private Integer enabled;
+    private String createdAt;
 }
