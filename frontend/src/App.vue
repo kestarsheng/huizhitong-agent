@@ -9,6 +9,11 @@ const messages = ref([])
 const agentCatalog = ref([])
 const catalogLoading = ref(true)
 const catalogError = ref('')
+const token = ref(localStorage.getItem('hzt_token') || '')
+const username = ref(localStorage.getItem('hzt_username') || '')
+const loginForm = ref({ username: 'admin', password: '' })
+const loginError = ref('')
+const loginLoading = ref(false)
 const grantAgentType = ref('inventory')
 const grantTenantId = ref(1)
 const grants = ref([])
@@ -189,13 +194,14 @@ const showForm = ref(false)
 const form = ref({ toolName: '', serverName: '', description: '' })
 const active = computed(() => tools.value.filter(t => t.enabled === 1).length)
 const grantedToolIds = computed(() => new Set(grants.value.map(g => g.toolId)))
+const authed = computed(() => !!token.value)
 
 async function loadTools() {
   loading.value = true
   try {
-    const health = await fetch('/api/internal/health')
+    const health = await authFetch('/api/internal/health')
     if (!health.ok) throw new Error('工具服务健康检查失败')
-    const response = await fetch('/api/internal/tools')
+    const response = await authFetch('/api/internal/tools')
     if (!response.ok) throw new Error('工具服务暂不可用')
     tools.value = await response.json()
     error.value = ''
@@ -203,11 +209,46 @@ async function loadTools() {
   finally { loading.value = false }
 }
 
+async function authFetch(url, options = {}) {
+  const headers = { ...(options.headers || {}) }
+  if (token.value) headers.Authorization = 'Bearer ' + token.value
+  const response = await fetch(url, { ...options, headers })
+  if (response.status === 401) { logout(); throw new Error('登录已过期，请重新登录') }
+  return response
+}
+
+async function login() {
+  loginLoading.value = true
+  loginError.value = ''
+  try {
+    const response = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(loginForm.value),
+    })
+    if (!response.ok) { loginError.value = '用户名或密码错误'; return }
+    const data = await response.json()
+    token.value = data.token
+    username.value = data.username
+    localStorage.setItem('hzt_token', data.token)
+    localStorage.setItem('hzt_username', data.username)
+    loginForm.value.password = ''
+    loadTools(); loadAgentCatalog(); loadGrants(); loadKnowledge(); loadAudits()
+  } catch (e) { loginError.value = e.message }
+  finally { loginLoading.value = false }
+}
+
+function logout() {
+  token.value = ''
+  username.value = ''
+  localStorage.removeItem('hzt_token')
+  localStorage.removeItem('hzt_username')
+}
 async function loadGrants() {
   grantLoading.value = true
   try {
     const query = '?agentType=' + encodeURIComponent(grantAgentType.value) + '&tenantId=' + grantTenantId.value
-    const response = await fetch('/api/internal/tools/grants' + query)
+    const response = await authFetch('/api/internal/tools/grants' + query)
     if (!response.ok) throw new Error('工具服务暂不可用')
     grants.value = await response.json()
     grantError.value = ''
@@ -220,10 +261,10 @@ async function toggleGrant(tool) {
   const base = '/api/internal/tools/grants'
   const query = '?agentType=' + encodeURIComponent(grantAgentType.value) + '&tenantId=' + grantTenantId.value
   if (granted) {
-    const response = await fetch(base + query + '&toolId=' + tool.id, { method: 'DELETE' })
+    const response = await authFetch(base + query + '&toolId=' + tool.id, { method: 'DELETE' })
     if (!response.ok) { grantError.value = '撤销授权失败'; return }
   } else {
-    const response = await fetch(base, {
+    const response = await authFetch(base, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ agentType: grantAgentType.value, tenantId: grantTenantId.value, toolId: tool.id }),
@@ -245,13 +286,13 @@ async function loadAgentCatalog() {
 
 async function toggleTool(tool) {
   const next = tool.enabled !== 1
-  const response = await fetch('/api/internal/tools/' + tool.id + '/status?enabled=' + next, { method: 'PATCH' })
+  const response = await authFetch('/api/internal/tools/' + tool.id + '/status?enabled=' + next, { method: 'PATCH' })
   if (!response.ok) { error.value = '工具状态更新失败'; return }
   await loadTools()
 }
 
 async function registerTool() {
-  const response = await fetch('/api/internal/tools', {
+  const response = await authFetch('/api/internal/tools', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ ...form.value, inputSchema: '{}', enabled: 1 }),
@@ -328,12 +369,12 @@ async function loadAudits() {
   finally { auditLoading.value = false }
 }
 
-onMounted(() => { loadTools(); loadAgentCatalog(); loadGrants(); loadKnowledge(); loadAudits() })
+onMounted(() => { if (authed.value) { loadTools(); loadAgentCatalog(); loadGrants(); loadKnowledge(); loadAudits() } })
 onBeforeUnmount(() => clearInterval(typeTimer))
 </script>
 
 <template>
-  <main class="shell">
+  <main v-if="authed" class="shell">
     <aside class="rail">
       <div class="brand">
         <div class="mark">HZ</div>
@@ -347,7 +388,7 @@ onBeforeUnmount(() => clearInterval(typeTimer))
         <a :class="{ selected: view === 'knowledge' }" @click="view = 'knowledge'">知识库</a>
         <a :class="{ selected: view === 'audit' }" @click="view = 'audit'">调用审计</a>
       </nav>
-      <div class="rail-foot"><i class="pulse"></i>LOCAL / DEV · v0.2</div>
+      <div class="rail-foot"><i class="pulse"></i>{{ username || 'LOCAL' }} · ADMIN <button class="logout-btn" @click="logout">退出</button></div>
     </aside>
 
     <section class="content">
@@ -611,7 +652,25 @@ onBeforeUnmount(() => clearInterval(typeTimer))
         </div>
       </template>
     </section>
-  </main>
+</main>
+    <main v-else class="login-page">
+      <div class="login-card">
+        <div class="brand" style="justify-content:center; margin-bottom:18px;">
+          <div class="mark">HZ</div>
+          <div class="brand-text">汇智通<span>AI CONTROL</span></div>
+        </div>
+        <p class="eyebrow">SIGN IN / ADMIN CONSOLE</p>
+        <h1>登录控制台</h1>
+        <p class="sub">使用管理员账号登录，管理智能体工具与授权。</p>
+        <form @submit.prevent="login">
+          <input v-model="loginForm.username" placeholder="用户名" autocomplete="username" />
+          <input v-model="loginForm.password" type="password" placeholder="密码" autocomplete="current-password" />
+          <p v-if="loginError" class="error-text">{{ loginError }}</p>
+          <button type="submit" :disabled="loginLoading">{{ loginLoading ? '登录中…' : '登录' }}</button>
+        </form>
+        <p class="hint">默认账号 admin / admin123</p>
+      </div>
+    </main>
 </template>
 
 <style>
@@ -847,4 +906,14 @@ button:disabled { opacity: 0.55; cursor: not-allowed; box-shadow: none; }
   .register-form textarea { grid-column: auto; }
   .chat-body { max-height: calc(100vh - 300px); }
 }
+.login-page { min-height: 100vh; display: grid; place-items: center; background: linear-gradient(160deg, #f0f6ff, #e3eefc); padding: 24px; }
+.login-card { width: 380px; max-width: 100%; background: #fff; border: 1px solid var(--line); border-radius: 22px; padding: 34px 32px; box-shadow: 0 24px 60px rgba(47,127,224,.16); }
+.login-card h1 { font-size: 22px; margin: 4px 0 8px; }
+.login-card form { display: flex; flex-direction: column; gap: 12px; margin-top: 18px; }
+.login-card input { border: 1px solid var(--line); border-radius: 11px; padding: 11px 13px; font: 14px Manrope, sans-serif; outline: none; color: var(--ink); }
+.login-card input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(47,127,224,.14); }
+.login-card button { margin-top: 4px; }
+.login-card .hint { font-size: 12px; color: var(--muted); margin-top: 14px; text-align: center; }
+.logout-btn { background: transparent; border: 1px solid var(--line); color: var(--muted); box-shadow: none; padding: 4px 10px; font-size: 12px; border-radius: 9px; margin-left: 8px; }
+.logout-btn:hover { border-color: var(--danger); color: var(--danger); background: transparent; transform: none; }
 </style>

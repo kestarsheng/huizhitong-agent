@@ -16,3 +16,11 @@ mybatis-plus:
     log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
   global-config:
     banner: false
+
+jwt:
+  secret: ${JWT_SECRET:huizhitong-dev-jwt-secret-change-me-2026}
+  expire-hours: 24
+
+auth:
+  admin-username: ${ADMIN_USERNAME:admin}
+  admin-init-password: ${ADMIN_INIT_PASSWORD:admin123}

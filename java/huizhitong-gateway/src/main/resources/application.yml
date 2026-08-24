@@ -15,16 +15,24 @@ spring:
             allowedHeaders: "*"
             allowCredentials: true
       routes:
+        - id: auth-service
+          uri: ${AUTH_SERVICE_URI:http://localhost:8083}
+          predicates:
+            - Path=/api/auth/**
+        - id: tool-internal
+          uri: ${TOOL_SERVICE_URI:http://localhost:8083}
+          predicates:
+            - Path=/api/internal/**
+          filters:
+            - RewritePath=/api/internal/(?<segment>.*), /internal/${segment}
         - id: agent-service
           uri: ${AGENT_SERVICE_URI:http://localhost:8081}
           predicates:
             - Path=/api/agents/**
-        - id: auth-service
-          uri: ${AUTH_SERVICE_URI:http://localhost:8082}
-          predicates:
-            - Path=/api/auth/**
 management:
   endpoints:
     web:
       exposure:
         include: health,info,metrics
+jwt:
+  secret: ${JWT_SECRET:huizhitong-dev-jwt-secret-change-me-2026}
