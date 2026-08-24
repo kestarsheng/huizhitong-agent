@@ -29,6 +29,7 @@ powershell -ExecutionPolicy Bypass -File scripts/start-services.ps1
 - 默认账号：`admin / admin123`（`scripts/env.local.ps1` 中 `ADMIN_INIT_PASSWORD` 可覆盖，JWT 有效期 24h）。
 - 预检：访问 `http://localhost:8080/api/internal/health`（白名单，无需 token）应返回 UP；打开 `http://localhost:5173` 后页面加载时也会自动做健康检查。
 - 可选：在「知识库」页先录入一条 E-1024 故障处理文档，RAG 检索效果更直观。
+- 可选：在「用户管理」页创建 OPERATOR / VIEWER 账号，演示分级角色权限。
 
 ### 0.4 两条访问路径（先分清，演示不迷路）
 
@@ -87,7 +88,8 @@ curl -i http://localhost:8083/internal/tools
 - **网关统一鉴权**：所有 `/api/**` 请求先过 `JwtAuthGlobalFilter`，白名单（login / health / actuator）外无 token 一律 401，业务服务无需各自重复做登录态校验；
 - **认证信息透传**：网关解析 JWT 后透传 `X-User-Id / X-Username / X-User-Role`，下游据此做角色 / 租户级 RBAC；
 - **服务端二次校验**：Tool Service 的 Spring Security 再验一次 JWT 并写入 SecurityContext，防止绕过网关直连；密钥由 JWT_SECRET 统一配置（网关与工具服务共享）。
-- **AI 服务统一收口**：/api/agent/** 与 /api/internal/** 同样经过网关 JWT 过滤，AI 接口不再裸奔，第三方接入统一走网关；
+- **AI 服务统一收口**：`/api/agent/**` 与 `/api/internal/**` 同样经过网关 JWT 过滤，AI 接口不再裸奔，第三方接入统一走网关；
+- **角色权限细分**：内置 ADMIN / OPERATOR / VIEWER——用户管理仅 ADMIN，工具与授权写操作要求 ADMIN/OPERATOR，查询与对话登录即可（前端按角色显隐按钮，后端接口强制校验）；
 
 ## 2. A2A 跨智能体协同演示（LangGraph + MCP）
 
