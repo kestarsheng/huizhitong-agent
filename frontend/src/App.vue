@@ -6,6 +6,9 @@ const agentType = ref('assistant')
 const tenantId = ref(1)
 const input = ref('')
 const messages = ref([])
+const agentCatalog = ref([])
+const catalogLoading = ref(true)
+const catalogError = ref('')
 const streaming = ref(false)
 const chatBody = ref(null)
 let conversationId = 'conv-' + Date.now()
@@ -34,6 +37,7 @@ const NODE_LABELS = {
   knowledge: { label: '知识检索', icon: '📚' },
   general: { label: '通用回答', icon: '💬' },
   validate_result: { label: '结果校验', icon: '✅' },
+  synthesize_result: { label: '协同汇总', icon: '🤝' },
 }
 
 const STATUS_TEXT = {
@@ -193,6 +197,17 @@ async function loadTools() {
   finally { loading.value = false }
 }
 
+async function loadAgentCatalog() {
+  catalogLoading.value = true
+  try {
+    const response = await fetch('/api/agent/agents/catalog')
+    if (!response.ok) throw new Error('Agent Runtime 暂不可用')
+    agentCatalog.value = await response.json()
+    catalogError.value = ''
+  } catch (e) { catalogError.value = e.message }
+  finally { catalogLoading.value = false }
+}
+
 async function toggleTool(tool) {
   const next = tool.enabled !== 1
   const response = await fetch('/api/internal/tools/' + tool.id + '/status?enabled=' + next, { method: 'PATCH' })
@@ -278,7 +293,7 @@ async function loadAudits() {
   finally { auditLoading.value = false }
 }
 
-onMounted(() => { loadTools(); loadKnowledge(); loadAudits() })
+onMounted(() => { loadTools(); loadAgentCatalog(); loadKnowledge(); loadAudits() })
 onBeforeUnmount(() => clearInterval(typeTimer))
 </script>
 
@@ -291,6 +306,7 @@ onBeforeUnmount(() => clearInterval(typeTimer))
       </div>
       <nav>
         <a :class="{ selected: view === 'chat' }" @click="view = 'chat'">智能体对话</a>
+        <a :class="{ selected: view === 'agents' }" @click="view = 'agents'">智能体目录</a>
         <a :class="{ selected: view === 'tools' }" @click="view = 'tools'">工具目录</a>
         <a :class="{ selected: view === 'knowledge' }" @click="view = 'knowledge'">知识库</a>
         <a :class="{ selected: view === 'audit' }" @click="view = 'audit'">调用审计</a>
@@ -359,6 +375,38 @@ onBeforeUnmount(() => clearInterval(typeTimer))
             <button class="send" :disabled="streaming || !input.trim()" @click="sendMessage">{{ streaming ? '运行中…' : '发送' }}</button>
           </div>
         </footer>
+      </template>
+
+      <!-- ============ 智能体目录 ============ -->
+      <template v-else-if="view === 'agents'">
+        <header>
+          <div>
+            <p class="eyebrow">AGENT MESH / A2A DIRECTORY</p>
+            <h1>智能体目录</h1>
+            <p class="sub">A2A 跨智能体协同：客服智能体识别意图后，并行转发给专业智能体并协同汇总答复。</p>
+          </div>
+          <div class="actions">
+            <button @click="loadAgentCatalog">刷新目录 ↻</button>
+          </div>
+        </header>
+        <div class="stats">
+          <div><span>注册智能体</span><strong>{{ agentCatalog.length }}</strong></div>
+          <div><span>协同入口</span><strong class="online">客服智能体</strong></div>
+          <div><span>路由模式</span><strong>LLM / 规则</strong></div>
+        </div>
+        <div v-if="catalogLoading" class="empty">正在读取智能体注册中心…</div>
+        <div v-else-if="catalogError" class="empty danger">{{ catalogError }}<button @click="loadAgentCatalog">重试</button></div>
+        <div v-else class="tool-grid">
+          <article v-for="agent in agentCatalog" :key="agent.agent_id" class="tool-card">
+            <div class="card-top">
+              <span class="tool-id">AGENT / {{ agent.agent_id.toUpperCase() }}</span>
+              <i class="dot on"></i>
+            </div>
+            <h2>{{ agent.name }}</h2>
+            <p>{{ agent.description }}</p>
+            <div class="server">节点 {{ agent.node }}<span v-if="agent.tools.length"> · 工具 {{ agent.tools.join('、') }}</span></div>
+          </article>
+        </div>
       </template>
 
       <!-- ============ 工具目录 ============ -->

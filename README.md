@@ -18,6 +18,7 @@
 - RAG 混合检索：BGE-M3 稠密 + 稀疏 → RRF 融合 → BGE-reranker-large 重排，Milvus / 内存向量库自动切换
 - MCP 工具接入：库存查询、工单查询等工具经 MCP 协议统一封装，支持注册与目录刷新
 - 双模型网关：DeepSeek 主模型 + 通义千问降级路由，主模型异常自动切换（LLM_PROVIDER / LLM_FALLBACK 可配）
+- A2A 跨智能体协同：客服智能体入口识别意图，经 LLM/规则路由并行转发库存、知识、工单专业智能体，协同汇总统一答复
 - 调用审计：RabbitMQ 异步落库 MySQL，MQ 故障自动降级直写，独立 worker 消费并自动重连
 - Java 微服务骨架：Spring Cloud Gateway + Nacos 注册发现、工具服务 REST 接口
 

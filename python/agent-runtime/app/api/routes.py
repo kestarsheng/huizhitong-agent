@@ -8,6 +8,7 @@ from functools import partial
 from fastapi import APIRouter, HTTPException
 from sse_starlette.sse import EventSourceResponse
 
+from app.a2a.registry import AGENTS
 from app.audit.recorder import audit_recorder
 from app.graph.basic_graph import basic_graph
 from app.rag.knowledge import DuplicateDocumentError, knowledge_service
@@ -43,6 +44,20 @@ async def _record_call(*, request: AgentRunRequest, status: str, node_count: int
         logger.warning("调用审计记录失败: %s", exc)
 
 
+@router.get("/agents/catalog")
+async def list_agent_catalog() -> list[dict[str, object]]:
+    """返回 A2A 智能体注册目录（客服入口 + 专业智能体）。"""
+    return [
+        {
+            "agent_id": agent.agent_id,
+            "name": agent.name,
+            "description": agent.description,
+            "node": agent.node,
+            "tools": list(agent.tools),
+        }
+        for agent in AGENTS.values()
+    ]
+
 @router.post("/agents/run", response_model=AgentRunResponse)
 async def run_agent(request: AgentRunRequest) -> AgentRunResponse:
     """执行 LangGraph 状态机；结束后异步写入调用审计。"""
@@ -56,7 +71,8 @@ async def run_agent(request: AgentRunRequest) -> AgentRunResponse:
         },
         config={"configurable": {"thread_id": request.conversation_id}},
     )
-    node_count = len(result.get("plan") or []) + 3
+    plan_len = len(result.get("plan") or [])
+    node_count = plan_len + (4 if plan_len > 1 else 3)
     await _record_call(request=request, status=result["status"], node_count=node_count, started=started)
     return AgentRunResponse(
         conversation_id=request.conversation_id,
