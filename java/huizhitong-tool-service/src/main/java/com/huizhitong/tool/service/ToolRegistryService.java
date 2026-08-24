@@ -66,6 +66,26 @@ public class ToolRegistryService {
         }
     }
 
+    /** 撤销租户/智能体对某工具的使用授权。 */
+    public void revoke(String agentType, Long tenantId, Long toolId) {
+        grantMapper.delete(new LambdaQueryWrapper<ToolGrant>()
+                .eq(ToolGrant::getAgentType, agentType)
+                .eq(ToolGrant::getTenantId, tenantId)
+                .eq(ToolGrant::getToolId, toolId));
+    }
+
+    /** 查询授权记录；可按智能体类型与租户过滤。 */
+    public List<ToolGrant> listGrants(String agentType, Long tenantId) {
+        LambdaQueryWrapper<ToolGrant> wrapper = new LambdaQueryWrapper<>();
+        if (agentType != null && !agentType.isBlank()) {
+            wrapper.eq(ToolGrant::getAgentType, agentType);
+        }
+        if (tenantId != null) {
+            wrapper.eq(ToolGrant::getTenantId, tenantId);
+        }
+        return grantMapper.selectList(wrapper);
+    }
+
     public List<ToolDefinition> available(String agentType, Long tenantId) {
         List<ToolGrant> grants = grantMapper.selectList(new LambdaQueryWrapper<ToolGrant>()
                 .eq(ToolGrant::getAgentType, agentType)
