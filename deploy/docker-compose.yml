@@ -1,0 +1,148 @@
+# 汇智通 全栈容器化部署
+# 用法：cd deploy && cp .env.example .env（填写 DEEPSEEK_API_KEY 等）后：
+#   docker compose build && docker compose up -d
+# 前置：先停本地服务（scripts/stop-services.ps1），避免端口冲突
+name: huizhitong
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: huizhitong-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-henu}
+      MYSQL_DATABASE: huizhitong
+      MYSQL_USER: hzt
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-hzt123456}
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      # 首次初始化自动建工具注册/授权表（users 由 Java 启动自建，audit_call 由 Python 自建）
+      - ../java/huizhitong-tool-service/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-p${MYSQL_ROOT_PASSWORD:-henu}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    container_name: huizhitong-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: huizhitong
+      RABBITMQ_DEFAULT_PASS: huizhitong
+    ports:
+      - "5673:5672"
+      - "15673:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  tool-service:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.java
+      args:
+        JAR_FILE: java/huizhitong-tool-service/target/huizhitong-tool-service-0.1.0-SNAPSHOT.jar
+    container_name: huizhitong-tool-service
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_PORT: "3306"
+      MYSQL_USER: hzt
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-hzt123456}
+      MYSQL_DATABASE: huizhitong
+      JWT_SECRET: ${JWT_SECRET:-huizhitong-docker-jwt-secret-change-me-2026}
+      ADMIN_INIT_PASSWORD: ${ADMIN_INIT_PASSWORD:-admin123}
+    ports:
+      - "8083:8083"
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  gateway:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.java
+      args:
+        JAR_FILE: java/huizhitong-gateway/target/huizhitong-gateway-0.1.0-SNAPSHOT.jar
+    container_name: huizhitong-gateway
+    environment:
+      AUTH_SERVICE_URI: http://tool-service:8083
+      TOOL_SERVICE_URI: http://tool-service:8083
+      AGENT_SERVICE_URI: http://agent-runtime:8000
+      JWT_SECRET: ${JWT_SECRET:-huizhitong-docker-jwt-secret-change-me-2026}
+    ports:
+      - "8080:8080"
+    depends_on:
+      - tool-service
+
+  agent-runtime:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.agent
+    container_name: huizhitong-agent-runtime
+    environment:
+      DEEPSEEK_ENABLED: "true"
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:-deepseek-chat}
+      QWEN_API_KEY: ${QWEN_API_KEY:-}
+      QWEN_MODEL: ${QWEN_MODEL:-qwen-plus}
+      LLM_PROVIDER: ${LLM_PROVIDER:-deepseek}
+      LLM_FALLBACK: "true"
+      TOOL_SERVICE_URL: http://tool-service:8083
+      AUDIT_MQ_URL: amqp://huizhitong:huizhitong@rabbitmq:5672
+      TICKET_MYSQL_HOST: mysql
+      TICKET_MYSQL_PORT: "3306"
+      TICKET_MYSQL_USER: hzt
+      TICKET_MYSQL_PASSWORD: ${MYSQL_PASSWORD:-hzt123456}
+      TICKET_MYSQL_DATABASE: huizhitong
+      RAG_VECTOR_STORE: ${RAG_VECTOR_STORE:-memory}
+      MILVUS_URI: http://milvus:19530
+      EMBEDDING_MODEL_PATH: /models/bge-m3
+      RERANKER_MODEL_PATH: /models/bge-reranker-large
+      RAG_DEVICE: cpu
+      MCP_INVENTORY_ENABLED: "false"
+      MCP_TICKET_ENABLED: "false"
+    volumes:
+      - ${EMBEDDING_MODEL_DIR:-E:/develop/Embedding}:/models:ro
+    ports:
+      - "8000:8000"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  audit-worker:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.agent
+    container_name: huizhitong-audit-worker
+    command: ["python", "-m", "app.audit.worker"]
+    environment:
+      AUDIT_MQ_URL: amqp://huizhitong:huizhitong@rabbitmq:5672
+      TICKET_MYSQL_HOST: mysql
+      TICKET_MYSQL_PORT: "3306"
+      TICKET_MYSQL_USER: hzt
+      TICKET_MYSQL_PASSWORD: ${MYSQL_PASSWORD:-hzt123456}
+      TICKET_MYSQL_DATABASE: huizhitong
+    depends_on:
+      mysql:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.frontend
+    container_name: huizhitong-frontend
+    ports:
+      - "5173:80"
+    depends_on:
+      - gateway
+
+volumes:
+  mysql-data:

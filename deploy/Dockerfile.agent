@@ -1,0 +1,19 @@
+# 汇智通 Agent Runtime 镜像（CPU 版，BGE 模型通过宿主机卷挂载）
+FROM python:3.11-slim
+
+WORKDIR /srv/agent
+
+# FlagEmbedding 等包需要编译 C++ 扩展，slim 镜像需补齐编译工具链
+RUN apt-get update && apt-get install -y --no-install-recommends build-essential python3-dev && rm -rf /var/lib/apt/lists/*
+
+# torch 先装 CPU 版，避免拉取 CUDA 依赖（镜像更小）
+COPY python/agent-runtime/requirements.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu torch==2.10.0+cpu && \
+    pip install --no-cache-dir -i https://pypi.tuna.tsinghua.edu.cn/simple -r /tmp/requirements.txt
+
+COPY python/agent-runtime /srv/agent
+RUN rm -rf /srv/agent/hzt-agent-venv /srv/agent/.venv /srv/agent/.pytest_cache /srv/agent/huizhitong_agent_runtime.egg-info
+
+ENV PYTHONUNBUFFERED=1
+EXPOSE 8000
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
