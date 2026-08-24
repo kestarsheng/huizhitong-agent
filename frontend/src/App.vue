@@ -11,6 +11,7 @@ const catalogLoading = ref(true)
 const catalogError = ref('')
 const token = ref(localStorage.getItem('hzt_token') || '')
 const username = ref(localStorage.getItem('hzt_username') || '')
+const role = ref(localStorage.getItem('hzt_role') || '')
 const loginForm = ref({ username: 'admin', password: '' })
 const loginError = ref('')
 const loginLoading = ref(false)
@@ -195,6 +196,8 @@ const form = ref({ toolName: '', serverName: '', description: '' })
 const active = computed(() => tools.value.filter(t => t.enabled === 1).length)
 const grantedToolIds = computed(() => new Set(grants.value.map(g => g.toolId)))
 const authed = computed(() => !!token.value)
+const isAdmin = computed(() => role.value === 'ADMIN')
+const canManage = computed(() => role.value === 'ADMIN' || role.value === 'OPERATOR')
 
 async function loadTools() {
   loading.value = true
@@ -230,10 +233,13 @@ async function login() {
     const data = await response.json()
     token.value = data.token
     username.value = data.username
+    role.value = data.role || ''
     localStorage.setItem('hzt_token', data.token)
     localStorage.setItem('hzt_username', data.username)
+    localStorage.setItem('hzt_role', data.role || '')
     loginForm.value.password = ''
     loadTools(); loadAgentCatalog(); loadGrants(); loadKnowledge(); loadAudits()
+    if (role.value === 'ADMIN') loadUsers()
   } catch (e) { loginError.value = e.message }
   finally { loginLoading.value = false }
 }
@@ -241,8 +247,10 @@ async function login() {
 function logout() {
   token.value = ''
   username.value = ''
+  role.value = ''
   localStorage.removeItem('hzt_token')
   localStorage.removeItem('hzt_username')
+  localStorage.removeItem('hzt_role')
 }
 async function loadGrants() {
   grantLoading.value = true
@@ -369,7 +377,68 @@ async function loadAudits() {
   finally { auditLoading.value = false }
 }
 
-onMounted(() => { if (authed.value) { loadTools(); loadAgentCatalog(); loadGrants(); loadKnowledge(); loadAudits() } })
+/* ---------- 用户管理 ---------- */
+const users = ref([])
+const userLoading = ref(false)
+const userError = ref('')
+const userShowForm = ref(false)
+const userForm = ref({ username: '', password: '', role: 'OPERATOR' })
+
+async function loadUsers() {
+  userLoading.value = true
+  try {
+    const response = await authFetch('/api/internal/users')
+    if (!response.ok) throw new Error('用户服务暂不可用')
+    users.value = await response.json()
+    userError.value = ''
+  } catch (e) { userError.value = e.message }
+  finally { userLoading.value = false }
+}
+
+async function createUser() {
+  const response = await authFetch('/api/internal/users', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(userForm.value),
+  })
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}))
+    userError.value = data.message || '创建用户失败'
+    return
+  }
+  userForm.value = { username: '', password: '', role: 'OPERATOR' }
+  userShowForm.value = false
+  await loadUsers()
+}
+
+async function toggleUserStatus(u) {
+  const next = u.enabled !== 1
+  const response = await authFetch('/api/internal/users/' + u.id + '/status?enabled=' + next, { method: 'PATCH' })
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}))
+    userError.value = data.message || '操作失败'
+    return
+  }
+  await loadUsers()
+}
+
+async function resetPassword(u) {
+  const newPassword = window.prompt('请输入「' + u.username + '」的新密码（至少 6 位）')
+  if (!newPassword || newPassword.length < 6) return
+  const response = await authFetch('/api/internal/users/' + u.id + '/password', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ newPassword }),
+  })
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}))
+    userError.value = data.message || '重置失败'
+    return
+  }
+  await loadUsers()
+}
+
+onMounted(() => { if (authed.value) { loadTools(); loadAgentCatalog(); loadGrants(); loadKnowledge(); loadAudits(); if (role.value === 'ADMIN') loadUsers() } })
 onBeforeUnmount(() => clearInterval(typeTimer))
 </script>
 
@@ -385,10 +454,11 @@ onBeforeUnmount(() => clearInterval(typeTimer))
         <a :class="{ selected: view === 'agents' }" @click="view = 'agents'">智能体目录</a>
         <a :class="{ selected: view === 'tools' }" @click="view = 'tools'">工具目录</a>
         <a :class="{ selected: view === 'grants' }" @click="view = 'grants'">授权管理</a>
+        <a v-if="isAdmin" :class="{ selected: view === 'users' }" @click="view = 'users'">用户管理</a>
         <a :class="{ selected: view === 'knowledge' }" @click="view = 'knowledge'">知识库</a>
         <a :class="{ selected: view === 'audit' }" @click="view = 'audit'">调用审计</a>
       </nav>
-      <div class="rail-foot"><i class="pulse"></i>{{ username || 'LOCAL' }} · ADMIN <button class="logout-btn" @click="logout">退出</button></div>
+      <div class="rail-foot"><i class="pulse"></i>{{ username || 'LOCAL' }} · {{ role || '—' }} <button class="logout-btn" @click="logout">退出</button></div>
     </aside>
 
     <section class="content">
@@ -495,7 +565,7 @@ onBeforeUnmount(() => clearInterval(typeTimer))
             <p class="sub">统一查看 MCP Server 暴露给智能体的业务能力。</p>
           </div>
           <div class="actions">
-            <button @click="showForm = !showForm">{{ showForm ? '取消注册' : '+ 注册工具' }}</button>
+            <button v-if="canManage" @click="showForm = !showForm">{{ showForm ? '取消注册' : '+ 注册工具' }}</button>
             <button @click="loadTools">刷新目录 ↻</button>
           </div>
         </header>
@@ -521,7 +591,7 @@ onBeforeUnmount(() => clearInterval(typeTimer))
             <h2>{{ tool.toolName }}</h2>
             <p>{{ tool.description }}</p>
             <div class="server">↳ {{ tool.serverName }} <span>{{ tool.enabled === 1 ? '已启用' : '已停用' }}</span></div>
-            <button class="toggle" @click="toggleTool(tool)">{{ tool.enabled === 1 ? '停用工具' : '启用工具' }}</button>
+            <button v-if="canManage" class="toggle" @click="toggleTool(tool)">{{ tool.enabled === 1 ? '停用工具' : '启用工具' }}</button>
           </article>
         </div>
       </template>
@@ -561,11 +631,64 @@ onBeforeUnmount(() => clearInterval(typeTimer))
             <h2>{{ tool.toolName }}</h2>
             <p>{{ tool.description }}</p>
             <div class="server">↳ {{ tool.serverName }} <span>{{ grantedToolIds.has(tool.id) ? '已授权' : '未授权' }}</span></div>
-            <button class="toggle" @click="toggleGrant(tool)">{{ grantedToolIds.has(tool.id) ? '撤销授权' : '授权工具' }}</button>
+            <button v-if="canManage" class="toggle" @click="toggleGrant(tool)">{{ grantedToolIds.has(tool.id) ? '撤销授权' : '授权工具' }}</button>
           </article>
           <div v-if="tools.length === 0" class="empty">暂无已注册工具，请先在「工具目录」注册。</div>
         </div>
       </template>
+      <!-- ============ 用户管理 ============ -->
+      <template v-else-if="view === 'users'">
+        <header>
+          <div>
+            <p class="eyebrow">CONTROL ROOM / USER & ROLE</p>
+            <h1>用户管理</h1>
+            <p class="sub">角色权限：ADMIN 管理用户与全部配置；OPERATOR 可管理工具与授权；VIEWER 只读。</p>
+          </div>
+          <div class="actions">
+            <button v-if="isAdmin" @click="userShowForm = !userShowForm">{{ userShowForm ? '取消创建' : '+ 新建用户' }}</button>
+            <button @click="loadUsers">刷新 ↻</button>
+          </div>
+        </header>
+        <form v-if="userShowForm" class="register-form" @submit.prevent="createUser">
+          <input v-model="userForm.username" required placeholder="用户名（3-64 字符）">
+          <input v-model="userForm.password" required type="password" placeholder="初始密码（至少 6 位）">
+          <select v-model="userForm.role">
+            <option value="OPERATOR">运营 OPERATOR</option>
+            <option value="VIEWER">只读 VIEWER</option>
+            <option value="ADMIN">管理员 ADMIN</option>
+          </select>
+          <button type="submit">创建用户</button>
+        </form>
+        <div class="stats">
+          <div><span>用户总数</span><strong>{{ users.length }}</strong></div>
+          <div><span>启用中</span><strong>{{ users.filter(u => u.enabled === 1).length }}</strong></div>
+          <div><span>当前角色</span><strong class="online">{{ role }}</strong></div>
+        </div>
+        <div v-if="userLoading" class="empty">正在读取用户列表…</div>
+        <div v-else-if="userError" class="empty danger">{{ userError }}<button @click="loadUsers">重试</button></div>
+        <div v-else class="audit-wrap">
+          <table class="audit-table">
+            <thead>
+              <tr><th>ID</th><th>用户名</th><th>角色</th><th>状态</th><th>创建时间</th><th>操作</th></tr>
+            </thead>
+            <tbody>
+              <tr v-for="u in users" :key="u.id">
+                <td class="mono">{{ u.id }}</td>
+                <td>{{ u.username }} <span v-if="u.username === username" class="badge info">当前账号</span></td>
+                <td><span :class="['badge', u.role === 'ADMIN' ? 'ok' : 'info']">{{ u.role }}</span></td>
+                <td><span :class="['badge', u.enabled === 1 ? 'ok' : 'bad']">{{ u.enabled === 1 ? '启用' : '停用' }}</span></td>
+                <td class="mono">{{ u.createdAt }}</td>
+                <td>
+                  <button class="toggle" :disabled="u.username === username" @click="toggleUserStatus(u)">{{ u.enabled === 1 ? '停用' : '启用' }}</button>
+                  <button class="toggle" @click="resetPassword(u)">重置密码</button>
+                </td>
+              </tr>
+              <tr v-if="users.length === 0"><td colspan="6" class="empty-row">暂无用户</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </template>
+
       <!-- ============ 调用审计 ============ -->
       <template v-else-if="view === 'audit'">
         <header>
