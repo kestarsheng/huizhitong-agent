@@ -26,9 +26,11 @@ spring:
           filters:
             - RewritePath=/api/internal/(?<segment>.*), /internal/${segment}
         - id: agent-service
-          uri: ${AGENT_SERVICE_URI:http://localhost:8081}
+          uri: ${AGENT_SERVICE_URI:http://localhost:8000}
           predicates:
-            - Path=/api/agents/**
+            - Path=/api/agent/**
+          filters:
+            - RewritePath=/api/agent/(?<segment>.*), /internal/${segment}
 management:
   endpoints:
     web:

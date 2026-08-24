@@ -143,7 +143,7 @@ async function sendMessage() {
   streaming.value = true
   scrollBottom()
   try {
-    const res = await fetch('/api/agent/agents/stream', {
+    const res = await authFetch('/api/agent/agents/stream', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -276,7 +276,7 @@ async function toggleGrant(tool) {
 async function loadAgentCatalog() {
   catalogLoading.value = true
   try {
-    const response = await fetch('/api/agent/agents/catalog')
+    const response = await authFetch('/api/agent/agents/catalog')
     if (!response.ok) throw new Error('Agent Runtime 暂不可用')
     agentCatalog.value = await response.json()
     catalogError.value = ''
@@ -314,7 +314,7 @@ const totalChunks = computed(() => docs.value.reduce((sum, doc) => sum + doc.chu
 async function loadKnowledge() {
   kbLoading.value = true
   try {
-    const response = await fetch('/api/agent/knowledge/documents')
+    const response = await authFetch('/api/agent/knowledge/documents')
     if (!response.ok) throw new Error('Agent Runtime 暂不可用')
     docs.value = await response.json()
     kbError.value = ''
@@ -323,7 +323,7 @@ async function loadKnowledge() {
 }
 
 async function addDocument() {
-  const response = await fetch('/api/agent/knowledge/documents', {
+  const response = await authFetch('/api/agent/knowledge/documents', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ document_id: kbForm.value.documentId, content: kbForm.value.content, tenant_id: kbForm.value.tenantId }),
@@ -361,7 +361,7 @@ async function loadAudits() {
   auditLoading.value = true
   try {
     const query = auditFilter.value ? '?agent_type=' + encodeURIComponent(auditFilter.value) : ''
-    const response = await fetch('/api/agent/audit/calls' + query)
+    const response = await authFetch('/api/agent/audit/calls' + query)
     if (!response.ok) throw new Error('审计服务暂不可用')
     audits.value = await response.json()
     auditError.value = ''
