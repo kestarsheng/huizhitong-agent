@@ -24,6 +24,7 @@ class AgentState(TypedDict, total=False):
     intent: str
     intents: list[str]
     plan: list[str]
+    agent_chain: Annotated[list[str], resetable_add]
     step_answers: Annotated[list[str], resetable_add]
     step_statuses: Annotated[list[str], resetable_add]
     answer: str

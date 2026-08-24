@@ -6,6 +6,8 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Send
 
+from app.a2a.registry import AGENT_NODE_MAP, match_agents
+from app.a2a.router import llm_route
 from app.graph.state import RESET_MARKER, AgentState
 from app.llm.gateway import generate_answer
 from app.rag.knowledge import knowledge_service
@@ -34,21 +36,16 @@ def pick_worst_status(statuses: list[str]) -> str:
     return max(statuses, key=lambda status: _STATUS_SEVERITY.get(status, 1))
 
 
-def classify_intent(state: AgentState) -> AgentState:
-    """意图识别：可识别多意图（库存+知识/工单），触发并行编排。"""
+async def classify_intent(state: AgentState) -> AgentState:
+    """意图识别（A2A 路由）：优先 LLM 识别转发目标，失败降级规则匹配。"""
     message = state["user_message"]
-    inventory_hit = any(word in message for word in ("库存", "商品", "销量"))
-    ticket_hit = any(word in message for word in ("工单", "售后", "投诉", "报修"))
-    knowledge_hit = any(word in message for word in ("故障", "维修", "手册", "怎么处理", "错误码")) or re.search(r"E-\d{3,}", message, re.IGNORECASE) is not None
-    intents: list[str] = []
-    if inventory_hit:
-        intents.append("inventory")
-    if ticket_hit:
-        intents.append("ticket")
-    elif knowledge_hit:
-        intents.append("knowledge")
-    if not intents:
-        intents = ["general"]
+    agent_ids = await llm_route(message)
+    if agent_ids is None:
+        agent_ids = match_agents(message)
+    intents = list(dict.fromkeys(AGENT_NODE_MAP[agent_id] for agent_id in agent_ids))
+    # 路由语义优先级：明确创建/查询工单时，工单意图优先于知识检索（避免冗余 RAG 分支）
+    if "ticket" in intents and "knowledge" in intents:
+        intents.remove("knowledge")
     return {
         "intent": intents[0],
         "intents": intents,
@@ -59,12 +56,16 @@ def classify_intent(state: AgentState) -> AgentState:
 
 
 def plan_task(state: AgentState) -> AgentState:
-    """任务规划：将意图列表转换为可执行的节点序列。"""
+    """任务规划：将意图列表转换为可执行节点序列，并记录 A2A 智能体链路。"""
     intents = state.get("intents") or [state.get("intent") or "general"]
-    plan = [item for item in intents if item in STEP_NODES]
+    plan = list(dict.fromkeys(item for item in intents if item in STEP_NODES))
     if not plan:
         plan = ["general"]
-    return {"plan": plan, "status": "PLANNED"}
+    return {
+        "plan": plan,
+        "agent_chain": [RESET_MARKER, "customer_service"] + plan,
+        "status": "PLANNED",
+    }
 
 
 def route_plan(state: AgentState) -> str | list[Send]:
@@ -169,6 +170,31 @@ def validate_result(state: AgentState) -> AgentState:
     return {"answer": joined, "status": pick_worst_status(statuses)}
 
 
+async def synthesize_result(state: AgentState) -> AgentState:
+    """A2A 协同汇总：多智能体协作时由客服智能体用 LLM 汇总统一答复，失败降级直接拼接。"""
+    answers = state.get("step_answers") or []
+    if not answers:
+        return {}
+    if len(answers) == 1:
+        return {"answer": answers[0], "status": state.get("status", "COMPLETED")}
+    try:
+        merged = await generate_answer(
+            "你是客服智能体。请把以下多个专业智能体返回的结果汇总为一段面向用户的统一答复，"
+            "保留关键事实（库存数字、工单号、错误码等），语气自然，不要编造。",
+            "\n\n".join(f"{index}. {item}" for index, item in enumerate(answers, start=1)),
+        )
+        if merged:
+            return {"answer": merged, "status": state.get("status", "COMPLETED")}
+    except Exception as exc:
+        logger.warning("A2A 协同汇总调用失败，降级直接拼接: %s", exc)
+    return {"answer": "\n".join(answers), "status": state.get("status", "COMPLETED")}
+
+
+def route_synthesize(state: AgentState) -> str:
+    """结果校验后路由：多智能体协作才进入协同汇总，否则直接结束。"""
+    return "synthesize_result" if len(state.get("plan") or []) > 1 else END
+
+
 def build_checkpointer():
     """Checkpoint 工厂：memory 默认；postgres/auto 配置 PG_DSN 后启用 PostgreSQL 持久化。
 
@@ -197,12 +223,18 @@ def build_basic_graph(checkpointer=None):
     graph.add_node("ticket", ticket_node)
     graph.add_node("general", general_node)
     graph.add_node("validate_result", validate_result)
+    graph.add_node("synthesize_result", synthesize_result)
     graph.add_edge(START, "classify_intent")
     graph.add_edge("classify_intent", "plan_task")
     graph.add_conditional_edges("plan_task", route_plan, list(STEP_NODES))
     for node in STEP_NODES:
         graph.add_edge(node, "validate_result")
-    graph.add_edge("validate_result", END)
+    graph.add_conditional_edges(
+        "validate_result",
+        route_synthesize,
+        {"synthesize_result": "synthesize_result", END: END},
+    )
+    graph.add_edge("synthesize_result", END)
     return graph.compile(checkpointer=checkpointer or build_checkpointer())
 
 
