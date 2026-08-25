@@ -58,6 +58,18 @@ docker compose -f deploy\docker-compose.yml -f deploy\docker-compose.host.yml up
 
 要求：宿主机 MySQL 已建 `huizhitong` 库；root 密码写入 `deploy\.env` 的 `MYSQL_HOST_PASSWORD`（默认 henu）。
 表由 Java/Python 服务启动时自建（与本地开发共用一套库，数据即开发数据）。
+## 国内网络下拉取镜像失败的处理
+
+基础镜像拉不动时，通常是网络无法直连 Docker Hub。推荐做法：
+
+1. 打开 Clash Verge 等代理工具（确保能访问 Docker Hub）；
+2. Docker Desktop → Settings → Resources → Proxies → 手动配置：
+   `http://127.0.0.1:7897`（HTTP 与 HTTPS 都填），保存后重启 Docker Desktop；
+3. 确认生效：`docker info` 应显示 `Proxy=http.docker.internal:3128`；
+4. 重新 `docker compose build`，基础镜像与 pip 依赖都会走代理。
+
+验证代理是否真正生效：`curl -x http://127.0.0.1:7897 -I https://registry-1.docker.io/v2/`
+返回 401 即代表可达（401 是未带凭证的正常响应）。
 ## 验证
 
 - 前端控制台：`http://localhost:5173`（默认账号 admin / admin123）
