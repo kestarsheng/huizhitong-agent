@@ -15,6 +15,23 @@ logger = logging.getLogger(__name__)
 
 _RECONNECT_DELAY = float(os.getenv("AUDIT_WORKER_RECONNECT_DELAY", "5"))
 
+_AUDIT_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS audit_call (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    conversation_id VARCHAR(100) NOT NULL,
+    agent_type VARCHAR(100) NOT NULL,
+    tenant_id VARCHAR(64) NOT NULL DEFAULT '',
+    message VARCHAR(500) NOT NULL,
+    status VARCHAR(32) NOT NULL,
+    node_count INT NOT NULL DEFAULT 0,
+    latency_ms INT NOT NULL DEFAULT 0,
+    model VARCHAR(64) NOT NULL DEFAULT '',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_created_at (created_at),
+    KEY idx_agent_type (agent_type)
+) DEFAULT CHARSET=utf8mb4
+"""
+
 _INSERT_SQL = (
     "INSERT INTO audit_call "
     "(conversation_id, agent_type, tenant_id, message, status, node_count, latency_ms, model) "
@@ -30,6 +47,16 @@ def _mysql_config() -> dict:
         "password": os.getenv("AUDIT_MYSQL_PASSWORD", os.getenv("TICKET_MYSQL_PASSWORD", "root")),
         "database": os.getenv("AUDIT_MYSQL_DATABASE", os.getenv("TICKET_MYSQL_DATABASE", "huizhitong")),
     }
+
+
+def _ensure_table(config: dict) -> None:
+    """启动时确保 audit_call 表存在（全新 MySQL 首次部署自建表）。"""
+    conn = pymysql.connect(**config, charset="utf8mb4", autocommit=True)
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute(_AUDIT_TABLE_SQL)
+    finally:
+        conn.close()
 
 
 def _insert(config: dict, payload: dict) -> None:
@@ -91,6 +118,7 @@ def main() -> None:
     if not mq_url:
         raise SystemExit("AUDIT_MQ_URL 未配置")
     config = _mysql_config()
+    _ensure_table(config)
     while True:
         try:
             _consume(config, mq_url)
