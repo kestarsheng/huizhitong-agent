@@ -121,7 +121,7 @@ async def stream_agent(request: AgentRunRequest) -> EventSourceResponse:
 
 
 @router.get("/audit/calls")
-async def list_audit_calls(limit: int = 50, agent_type: str | None = None, status: str | None = None) -> list[dict[str, object]]:
+async def list_audit_calls(limit: int = 50, agent_type: str | None = None, status: str | None = None, tenant_id: str | None = None) -> list[dict[str, object]]:
     """查询调用审计记录；DB 不可用时返回空列表，不影响其它接口。"""
     try:
         return await asyncio.to_thread(
@@ -130,6 +130,7 @@ async def list_audit_calls(limit: int = 50, agent_type: str | None = None, statu
                 limit=min(max(limit, 1), 200),
                 agent_type=agent_type or None,
                 status=status or None,
+                tenant_id=tenant_id or None,
             )
         )
     except Exception as exc:
@@ -154,6 +155,6 @@ async def add_document(request: DocumentCreateRequest) -> dict[str, object]:
 
 
 @router.get("/knowledge/documents", response_model=list[DocumentSummary])
-async def list_documents() -> list[dict[str, object]]:
+async def list_documents(tenant_id: str | None = None) -> list[dict[str, object]]:
     """返回知识库文档清单。"""
-    return knowledge_service.list_documents()
+    return knowledge_service.list_documents(tenant_id=tenant_id)

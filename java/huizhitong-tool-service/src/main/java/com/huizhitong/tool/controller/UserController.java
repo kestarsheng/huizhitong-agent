@@ -18,7 +18,7 @@ import java.util.Set;
 @RequestMapping("/internal/users")
 public class UserController {
 
-    private static final Set<String> ROLES = Set.of("ADMIN", "OPERATOR", "VIEWER");
+    private static final Set<String> ROLES = Set.of("ADMIN", "OPERATOR", "VIEWER", "USER");
 
     private final UserMapper userMapper;
     private final PasswordEncoder passwordEncoder;
@@ -46,7 +46,10 @@ public class UserController {
             throw new IllegalArgumentException("密码长度需在 6-64 之间");
         }
         if (!ROLES.contains(role)) {
-            throw new IllegalArgumentException("角色仅支持 ADMIN / OPERATOR / VIEWER");
+            throw new IllegalArgumentException("角色仅支持 ADMIN / OPERATOR / VIEWER / USER");
+        }
+        if ("USER".equals(role) && (request.tenantId() == null || request.tenantId() <= 0)) {
+            throw new IllegalArgumentException("租户用户必须指定租户 ID");
         }
         Long exists = userMapper.selectCount(new LambdaQueryWrapper<SysUser>()
                 .eq(SysUser::getUsername, username));
@@ -57,6 +60,7 @@ public class UserController {
         user.setUsername(username);
         user.setPasswordHash(passwordEncoder.encode(password));
         user.setRole(role);
+        user.setTenantId(request.tenantId());
         user.setEnabled(1);
         userMapper.insert(user);
         return toView(user);
@@ -94,6 +98,6 @@ public class UserController {
     }
 
     private UserView toView(SysUser user) {
-        return new UserView(user.getId(), user.getUsername(), user.getRole(), user.getEnabled(), user.getCreatedAt());
+        return new UserView(user.getId(), user.getUsername(), user.getRole(), user.getEnabled(), user.getCreatedAt(), user.getTenantId());
     }
 }

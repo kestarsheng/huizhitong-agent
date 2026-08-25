@@ -137,7 +137,7 @@ class AuditRecorder:
         finally:
             conn.close()
 
-    def list(self, *, limit: int = 50, agent_type: str | None = None, status: str | None = None) -> list[dict]:
+    def list(self, *, limit: int = 50, agent_type: str | None = None, status: str | None = None, tenant_id: str | None = None) -> list[dict]:
         self._ensure_table()
         conn = self._connect()
         try:
@@ -154,6 +154,9 @@ class AuditRecorder:
                 if status:
                     conditions.append("status = %s")
                     params.append(status)
+                if tenant_id:
+                    conditions.append("tenant_id = %s")
+                    params.append(str(tenant_id))
                 if conditions:
                     sql += " WHERE " + " AND ".join(conditions)
                 sql += " ORDER BY id DESC LIMIT %s"

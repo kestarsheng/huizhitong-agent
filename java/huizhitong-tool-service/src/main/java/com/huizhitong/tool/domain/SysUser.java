@@ -13,6 +13,7 @@ public class SysUser {
     private String username;
     private String passwordHash;
     private String role;
+    private Long tenantId;
     private Integer enabled;
     private String createdAt;
 }

@@ -22,16 +22,18 @@ public class JwtUtil {
         this.expireMillis = Duration.ofHours(expireHours).toMillis();
     }
 
-    public String createToken(Long userId, String username, String role) {
+    public String createToken(Long userId, String username, String role, Long tenantId) {
         Date now = new Date();
-        return Jwts.builder()
+        var builder = Jwts.builder()
                 .subject(username)
                 .claim("uid", String.valueOf(userId))
                 .claim("role", role)
                 .issuedAt(now)
-                .expiration(new Date(now.getTime() + expireMillis))
-                .signWith(key)
-                .compact();
+                .expiration(new Date(now.getTime() + expireMillis));
+        if (tenantId != null) {
+            builder.claim("tenantId", String.valueOf(tenantId));
+        }
+        return builder.signWith(key).compact();
     }
 
     public Claims parse(String token) {

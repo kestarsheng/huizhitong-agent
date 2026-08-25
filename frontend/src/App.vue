@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
 const view = ref('chat')
 const agentType = ref('assistant')
-const tenantId = ref(1)
+const tenantId = ref(Number(localStorage.getItem('hzt_tenant')) || 1)
 const input = ref('')
 const messages = ref([])
 const agentCatalog = ref([])
@@ -197,6 +197,7 @@ const active = computed(() => tools.value.filter(t => t.enabled === 1).length)
 const grantedToolIds = computed(() => new Set(grants.value.map(g => g.toolId)))
 const authed = computed(() => !!token.value)
 const isAdmin = computed(() => role.value === 'ADMIN')
+const isTenant = computed(() => role.value === 'USER')
 const canManage = computed(() => role.value === 'ADMIN' || role.value === 'OPERATOR')
 
 async function loadTools() {
@@ -234,11 +235,14 @@ async function login() {
     token.value = data.token
     username.value = data.username
     role.value = data.role || ''
+    tenantId.value = data.tenantId || 1
     localStorage.setItem('hzt_token', data.token)
     localStorage.setItem('hzt_username', data.username)
     localStorage.setItem('hzt_role', data.role || '')
+    localStorage.setItem('hzt_tenant', String(tenantId.value))
     loginForm.value.password = ''
-    loadTools(); loadAgentCatalog(); loadGrants(); loadKnowledge(); loadAudits()
+    loadAgentCatalog(); loadKnowledge()
+    if (role.value !== 'USER') { loadTools(); loadGrants(); loadAudits() }
     if (role.value === 'ADMIN') loadUsers()
   } catch (e) { loginError.value = e.message }
   finally { loginLoading.value = false }
@@ -248,9 +252,11 @@ function logout() {
   token.value = ''
   username.value = ''
   role.value = ''
+  tenantId.value = 1
   localStorage.removeItem('hzt_token')
   localStorage.removeItem('hzt_username')
   localStorage.removeItem('hzt_role')
+  localStorage.removeItem('hzt_tenant')
 }
 async function loadGrants() {
   grantLoading.value = true
@@ -322,7 +328,8 @@ const totalChunks = computed(() => docs.value.reduce((sum, doc) => sum + doc.chu
 async function loadKnowledge() {
   kbLoading.value = true
   try {
-    const response = await authFetch('/api/agent/knowledge/documents')
+    const suffix = isTenant.value ? '?tenant_id=' + encodeURIComponent(tenantId.value) : ''
+    const response = await authFetch('/api/agent/knowledge/documents' + suffix)
     if (!response.ok) throw new Error('Agent Runtime 暂不可用')
     docs.value = await response.json()
     kbError.value = ''
@@ -334,10 +341,10 @@ async function addDocument() {
   const response = await authFetch('/api/agent/knowledge/documents', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ document_id: kbForm.value.documentId, content: kbForm.value.content, tenant_id: kbForm.value.tenantId }),
+    body: JSON.stringify({ document_id: kbForm.value.documentId, content: kbForm.value.content, tenant_id: isTenant.value ? String(tenantId.value) : kbForm.value.tenantId }),
   })
   if (!response.ok) { kbError.value = response.status === 409 ? '文档 ID 已存在' : '文档入库失败'; return }
-  kbForm.value = { documentId: '', content: '', tenantId: 'default' }
+  kbForm.value = { documentId: '', content: '', tenantId: isTenant.value ? String(tenantId.value) : 'default' }
   kbShowForm.value = false
   await loadKnowledge()
 }
@@ -382,7 +389,7 @@ const users = ref([])
 const userLoading = ref(false)
 const userError = ref('')
 const userShowForm = ref(false)
-const userForm = ref({ username: '', password: '', role: 'OPERATOR' })
+const userForm = ref({ username: '', password: '', role: 'OPERATOR', tenantId: null })
 
 async function loadUsers() {
   userLoading.value = true
@@ -406,7 +413,7 @@ async function createUser() {
     userError.value = data.message || '创建用户失败'
     return
   }
-  userForm.value = { username: '', password: '', role: 'OPERATOR' }
+  userForm.value = { username: '', password: '', role: 'OPERATOR', tenantId: null }
   userShowForm.value = false
   await loadUsers()
 }
@@ -438,7 +445,13 @@ async function resetPassword(u) {
   await loadUsers()
 }
 
-onMounted(() => { if (authed.value) { loadTools(); loadAgentCatalog(); loadGrants(); loadKnowledge(); loadAudits(); if (role.value === 'ADMIN') loadUsers() } })
+onMounted(() => {
+  if (authed.value) {
+    loadAgentCatalog(); loadKnowledge()
+    if (!isTenant.value) { loadTools(); loadGrants(); loadAudits() }
+    if (role.value === 'ADMIN') loadUsers()
+  }
+})
 onBeforeUnmount(() => clearInterval(typeTimer))
 </script>
 
@@ -451,12 +464,14 @@ onBeforeUnmount(() => clearInterval(typeTimer))
       </div>
       <nav>
         <a :class="{ selected: view === 'chat' }" @click="view = 'chat'">智能体对话</a>
-        <a :class="{ selected: view === 'agents' }" @click="view = 'agents'">智能体目录</a>
-        <a :class="{ selected: view === 'tools' }" @click="view = 'tools'">工具目录</a>
-        <a :class="{ selected: view === 'grants' }" @click="view = 'grants'">授权管理</a>
-        <a v-if="isAdmin" :class="{ selected: view === 'users' }" @click="view = 'users'">用户管理</a>
+        <template v-if="!isTenant">
+          <a :class="{ selected: view === 'agents' }" @click="view = 'agents'">智能体目录</a>
+          <a :class="{ selected: view === 'tools' }" @click="view = 'tools'">工具目录</a>
+          <a :class="{ selected: view === 'grants' }" @click="view = 'grants'">授权管理</a>
+          <a v-if="isAdmin" :class="{ selected: view === 'users' }" @click="view = 'users'">用户管理</a>
+          <a :class="{ selected: view === 'audit' }" @click="view = 'audit'">调用审计</a>
+        </template>
         <a :class="{ selected: view === 'knowledge' }" @click="view = 'knowledge'">知识库</a>
-        <a :class="{ selected: view === 'audit' }" @click="view = 'audit'">调用审计</a>
       </nav>
       <div class="rail-foot"><i class="pulse"></i>{{ username || 'LOCAL' }} · {{ role || '—' }} <button class="logout-btn" @click="logout">退出</button></div>
     </aside>
@@ -474,7 +489,8 @@ onBeforeUnmount(() => clearInterval(typeTimer))
             <select v-model="agentType" class="agent-select">
               <option v-for="a in agents" :key="a.value" :value="a.value">{{ a.label }}</option>
             </select>
-            <input v-model.number="tenantId" class="tenant-input" type="number" min="1" placeholder="租户 ID" />
+            <input v-if="!isTenant" v-model.number="tenantId" class="tenant-input" type="number" min="1" placeholder="租户 ID" />
+            <span v-else class="badge info">租户 #{{ tenantId }}</span>
             <button @click="newChat">新会话</button>
           </div>
         </header>
@@ -655,8 +671,10 @@ onBeforeUnmount(() => clearInterval(typeTimer))
           <select v-model="userForm.role">
             <option value="OPERATOR">运营 OPERATOR</option>
             <option value="VIEWER">只读 VIEWER</option>
+            <option value="USER">租户用户 USER</option>
             <option value="ADMIN">管理员 ADMIN</option>
           </select>
+          <input v-if="userForm.role === 'USER'" v-model.number="userForm.tenantId" type="number" min="1" placeholder="租户 ID">
           <button type="submit">创建用户</button>
         </form>
         <div class="stats">
@@ -669,13 +687,14 @@ onBeforeUnmount(() => clearInterval(typeTimer))
         <div v-else class="audit-wrap">
           <table class="audit-table">
             <thead>
-              <tr><th>ID</th><th>用户名</th><th>角色</th><th>状态</th><th>创建时间</th><th>操作</th></tr>
+              <tr><th>ID</th><th>用户名</th><th>角色</th><th>租户</th><th>状态</th><th>创建时间</th><th>操作</th></tr>
             </thead>
             <tbody>
               <tr v-for="u in users" :key="u.id">
                 <td class="mono">{{ u.id }}</td>
                 <td>{{ u.username }} <span v-if="u.username === username" class="badge info">当前账号</span></td>
                 <td><span :class="['badge', u.role === 'ADMIN' ? 'ok' : 'info']">{{ u.role }}</span></td>
+                <td class="mono">{{ u.tenantId || '-' }}</td>
                 <td><span :class="['badge', u.enabled === 1 ? 'ok' : 'bad']">{{ u.enabled === 1 ? '启用' : '停用' }}</span></td>
                 <td class="mono">{{ u.createdAt }}</td>
                 <td>
@@ -683,7 +702,7 @@ onBeforeUnmount(() => clearInterval(typeTimer))
                   <button class="toggle" @click="resetPassword(u)">重置密码</button>
                 </td>
               </tr>
-              <tr v-if="users.length === 0"><td colspan="6" class="empty-row">暂无用户</td></tr>
+              <tr v-if="users.length === 0"><td colspan="7" class="empty-row">暂无用户</td></tr>
             </tbody>
           </table>
         </div>
@@ -751,7 +770,8 @@ onBeforeUnmount(() => clearInterval(typeTimer))
         </header>
         <form v-if="kbShowForm" class="register-form" @submit.prevent="addDocument">
           <input v-model="kbForm.documentId" required placeholder="文档 ID，如 return-policy">
-          <input v-model="kbForm.tenantId" required placeholder="租户 ID，如 default">
+          <input v-if="!isTenant" v-model="kbForm.tenantId" required placeholder="租户 ID，如 default">
+          <div v-else class="badge info" style="margin:0">本租户 #{{ tenantId }}</div>
           <textarea v-model="kbForm.content" required placeholder="文档内容，保存后自动切片入库" rows="3"></textarea>
           <button type="submit">保存文档</button>
         </form>

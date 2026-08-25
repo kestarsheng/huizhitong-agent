@@ -7,6 +7,7 @@ import org.springframework.core.Ordered;
 import org.springframework.core.io.buffer.DataBuffer;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.springframework.stereotype.Component;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
@@ -37,12 +38,16 @@ public class JwtAuthGlobalFilter implements GlobalFilter, Ordered {
         }
         try {
             Claims claims = jwtUtil.parse(header.substring(7));
-            ServerWebExchange mutated = exchange.mutate()
-                    .request(builder -> builder
-                            .header("X-User-Id", claims.get("uid", String.class))
-                            .header("X-Username", claims.getSubject())
-                            .header("X-User-Role", String.valueOf(claims.get("role", String.class))))
-                    .build();
+            var requestBuilder = exchange.getRequest().mutate()
+                    .header("X-User-Id", claims.get("uid", String.class))
+                    .header("X-Username", claims.getSubject())
+                    .header("X-User-Role", String.valueOf(claims.get("role", String.class)));
+            String tenantId = claims.get("tenantId", String.class);
+            if (tenantId != null && !tenantId.isBlank()) {
+                requestBuilder.header("X-Tenant-Id", tenantId);
+            }
+            ServerHttpRequest mutatedRequest = requestBuilder.build();
+            ServerWebExchange mutated = exchange.mutate().request(mutatedRequest).build();
             return chain.filter(mutated);
         } catch (Exception ex) {
             return unauthorized(exchange, "访问令牌无效或已过期");
