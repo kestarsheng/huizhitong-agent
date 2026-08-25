@@ -23,9 +23,16 @@ public class UserBootstrapConfig {
                     + "username VARCHAR(64) NOT NULL UNIQUE,"
                     + "password_hash VARCHAR(100) NOT NULL,"
                     + "role VARCHAR(32) NOT NULL DEFAULT 'ADMIN',"
+                    + "tenant_id BIGINT NULL,"
                     + "enabled TINYINT NOT NULL DEFAULT 1,"
                     + "created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP"
                     + ") DEFAULT CHARSET=utf8mb4");
+            Integer tenantCol = jdbc.queryForObject(
+                    "SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' AND COLUMN_NAME = 'tenant_id'",
+                    Integer.class);
+            if (tenantCol == null || tenantCol == 0) {
+                jdbc.execute("ALTER TABLE users ADD COLUMN tenant_id BIGINT NULL");
+            }
             Long count = userMapper.selectCount(new LambdaQueryWrapper<SysUser>()
                     .eq(SysUser::getUsername, adminUsername));
             if (count == null || count == 0) {
@@ -36,6 +43,18 @@ public class UserBootstrapConfig {
                 user.setEnabled(1);
                 userMapper.insert(user);
                 System.out.println("已初始化管理员账号: " + adminUsername);
+            }
+            Long tenantCount = userMapper.selectCount(new LambdaQueryWrapper<SysUser>()
+                    .eq(SysUser::getUsername, "tenant1"));
+            if (tenantCount == null || tenantCount == 0) {
+                SysUser tenantUser = new SysUser();
+                tenantUser.setUsername("tenant1");
+                tenantUser.setPasswordHash(encoder.encode("123456"));
+                tenantUser.setRole("USER");
+                tenantUser.setEnabled(1);
+                tenantUser.setTenantId(1L);
+                userMapper.insert(tenantUser);
+                System.out.println("已初始化演示租户账号: tenant1 / 123456 (tenantId=1)");
             }
         };
     }

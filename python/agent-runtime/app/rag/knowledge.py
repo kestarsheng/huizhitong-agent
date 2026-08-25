@@ -73,6 +73,8 @@ class KnowledgeService:
         if any(doc["document_id"] == document_id for doc in self._documents):
             raise DuplicateDocumentError(f"document_id already exists: {document_id}")
         chunks = split_document(document_id, content)
+        for chunk in chunks:
+            chunk.metadata["tenant_id"] = tenant_id
         base = len(self._chunks)
         self._chunks.extend(chunks)
         self._chunk_index.update({chunk.chunk_id: base + offset for offset, chunk in enumerate(chunks)})
@@ -92,17 +94,24 @@ class KnowledgeService:
                 logger.warning("Milvus 写入失败，降级为内存向量索引: %s", exc)
         return [chunk.chunk_id for chunk in chunks]
 
-    def list_documents(self) -> list[dict[str, object]]:
-        return list(self._documents)
+    def list_documents(self, tenant_id: str | None = None) -> list[dict[str, object]]:
+        if tenant_id is None:
+            return list(self._documents)
+        tenant_id = str(tenant_id)
+        return [doc for doc in self._documents if str(doc.get("tenant_id", "")) == tenant_id]
 
     # ---------- 检索 ----------
 
-    def search_context(self, question: str, top_k: int = 3) -> str:
+    def search_context(self, question: str, top_k: int = 3, tenant_id: str | None = None) -> str:
+        tenant_id = str(tenant_id) if tenant_id is not None else None
         try:
-            results = self._hybrid_retrieve(question, top_k=top_k)
+            results = self._hybrid_retrieve(question, top_k=top_k, tenant_id=tenant_id)
         except Exception as exc:  # 模型缺失或加载失败时降级
             logger.warning("RAG 混合检索不可用，降级为稀疏检索: %s", exc)
-            results = self.retriever.retrieve(question, top_k=top_k)
+            results = [
+                item for item in self.retriever.retrieve(question, top_k=top_k)
+                if tenant_id is None or str(item.chunk.metadata.get("tenant_id", "")) == tenant_id
+            ]
         relevant = [
             item.chunk.content
             for item in results
@@ -110,17 +119,18 @@ class KnowledgeService:
         ]
         return "\n".join(relevant)
 
-    def _hybrid_retrieve(self, question: str, *, top_k: int = 3, recall_k: int = 20) -> list[RetrievedChunk]:
-        if not self._chunks:
+    def _hybrid_retrieve(self, question: str, *, top_k: int = 3, recall_k: int = 20, tenant_id: str | None = None) -> list[RetrievedChunk]:
+        chunks = self._tenant_chunks(tenant_id)
+        if not chunks:
             return []
         sparse = sorted(
-            (RetrievedChunk(chunk, sparse_score=sparse_score(question, chunk.content)) for chunk in self._chunks),
+            (RetrievedChunk(chunk, sparse_score=sparse_score(question, chunk.content)) for chunk in chunks),
             key=lambda item: item.sparse_score,
             reverse=True,
         )
         sparse = [item for item in sparse if item.sparse_score > 0][:recall_k]
         try:
-            dense = self._dense_recall(question, recall_k=recall_k)
+            dense = self._dense_recall(question, recall_k=recall_k, tenant_id=tenant_id)
         except Exception as exc:
             logger.warning("稠密召回不可用，仅使用稀疏召回: %s", exc)
             return sparse[:top_k]
@@ -133,14 +143,14 @@ class KnowledgeService:
             logger.warning("重排序不可用，使用融合排序结果: %s", exc)
             return fused[:top_k]
 
-    def _dense_recall(self, question: str, *, recall_k: int = 20) -> list[RetrievedChunk]:
+    def _dense_recall(self, question: str, *, recall_k: int = 20, tenant_id: str | None = None) -> list[RetrievedChunk]:
         """稠密召回：优先 Milvus，失败或未启用时回退内存索引。"""
         if self._milvus is not None and self._milvus_ok:
             try:
                 query_vector = self._provider.embed([question])[0]
                 ranked = [
                     RetrievedChunk(self._chunks[index], dense_score=item.dense_score)
-                    for item in self._milvus.search_dense(query_vector, top_k=recall_k)
+                    for item in self._milvus.search_dense(query_vector, top_k=recall_k, tenant_id=tenant_id)
                     if (index := self._chunk_index.get(item.chunk.chunk_id)) is not None
                 ]
                 if ranked:
@@ -148,24 +158,36 @@ class KnowledgeService:
             except Exception as exc:
                 self._milvus_ok = False
                 logger.warning("Milvus 检索失败，降级为内存向量索引: %s", exc)
-        return self._dense_recall_memory(question, recall_k=recall_k)
+        return self._dense_recall_memory(question, recall_k=recall_k, tenant_id=tenant_id)
 
-    def _dense_recall_memory(self, question: str, *, recall_k: int = 20) -> list[RetrievedChunk]:
-        if self._vectors is None:
-            self._vectors = self._embed([chunk.content for chunk in self._chunks])
+    def _dense_recall_memory(self, question: str, *, recall_k: int = 20, tenant_id: str | None = None) -> list[RetrievedChunk]:
+        chunks = self._tenant_chunks(tenant_id)
+        if not chunks:
+            return []
+        if self._vectors is None or tenant_id is not None:
+            vectors = self._embed([chunk.content for chunk in chunks])
+            if tenant_id is None:
+                self._vectors = vectors
+        else:
+            vectors = self._vectors
         query_vector = self._provider.embed([question])[0]
         ranked = sorted(
-            ((index, cosine_similarity(query_vector, vector)) for index, vector in enumerate(self._vectors)),
+            ((index, cosine_similarity(query_vector, vector)) for index, vector in enumerate(vectors)),
             key=lambda pair: pair[1],
             reverse=True,
         )
         return [
-            RetrievedChunk(self._chunks[index], dense_score=score)
+            RetrievedChunk(chunks[index], dense_score=score)
             for index, score in ranked[:recall_k]
             if score > 0
         ]
 
     # ---------- 内部 ----------
+
+    def _tenant_chunks(self, tenant_id: str | None) -> list[DocumentChunk]:
+        if tenant_id is None:
+            return self._chunks
+        return [c for c in self._chunks if str(c.metadata.get("tenant_id", "")) == tenant_id]
 
     def _embed(self, texts: list[str]) -> list[list[float]]:
         vectors: list[list[float]] = []

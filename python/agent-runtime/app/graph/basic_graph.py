@@ -98,7 +98,8 @@ async def inventory_node(state: AgentState) -> AgentState:
 
 
 async def knowledge_node(state: AgentState) -> AgentState:
-    context = knowledge_service.search_context(state["user_message"])
+    tenant_id = state.get("tenant_id")
+    context = knowledge_service.search_context(state["user_message"], tenant_id=str(tenant_id) if tenant_id is not None else None)
     if not context:
         return _step_result("知识库暂未检索到相关内容，请补充设备型号、错误码或具体故障现象。", "WAITING_RAG")
     return _step_result(f"根据知识库检索结果：\n{context}", "WAITING_RAG")

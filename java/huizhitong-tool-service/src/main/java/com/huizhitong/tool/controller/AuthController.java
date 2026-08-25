@@ -33,7 +33,7 @@ public class AuthController {
                 || !passwordEncoder.matches(request.password(), user.getPasswordHash())) {
             throw new IllegalArgumentException("用户名或密码错误");
         }
-        String token = jwtUtil.createToken(user.getId(), user.getUsername(), user.getRole());
-        return new LoginResponse(token, user.getUsername(), user.getRole(), jwtUtil.getExpireSeconds());
+        String token = jwtUtil.createToken(user.getId(), user.getUsername(), user.getRole(), user.getTenantId());
+        return new LoginResponse(token, user.getUsername(), user.getRole(), jwtUtil.getExpireSeconds(), user.getTenantId());
     }
 }
